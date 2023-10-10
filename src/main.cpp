@@ -14,6 +14,7 @@ static CAN_message_t msg_rx;
 static CAN_message_t msg_tx;
 
 // Global Variables
+String gpsID = "";               // Whatever ID you want for your fake can msg
 uint64_t global_ms_offset;       // Time calc things
 uint64_t last_sec_epoch;         // Time calc things 2
 Metro timerMsgRTC = Metro(1000); // Timer for saving to disk
@@ -21,9 +22,12 @@ Metro timerFlush = Metro(50);    // Timer for sending time can
 File logger;                     // For saving to disk
 String inputSerial8 = "";        // a string to hold incoming data
 boolean IsReadySerial8 = false;  // whether the string is complete
+int redLED = 36;                 // Pin for red LED
+int blueLED = 37;                // Pin for blue LED
 
 // Define functions
-void parse_can_message();                          // parse incoming msg
+void parseCanMessage();                            // parse incoming msg
+void gpsCanMessage();                              // save global pos as can
 void write_to_SD(CAN_message_t *msg);              // write can msg to disk
 void sd_date_time(uint16_t *date, uint16_t *time); // for sd lib things
 String date_time(int time);                  // returns string of date/time
@@ -99,8 +103,10 @@ void setup() {
   if (logger) { // Print on open
     Serial.print("Successfully opened SD file: ");
     Serial.println(filename);
+    digitalWrite(blueLED, HIGH);
   } else { // Print on fail
     Serial.println("Failed to open SD file");
+    digitalWrite(redLED, HIGH);
   }
 
   // Print CSV heading to the logfile
@@ -110,14 +116,15 @@ void setup() {
 
 void loop() {
   // Process and log incoming CAN messages
-  parse_can_message();
+  parseCanMessage();
 
   // Take GPS data and make CAN packet out of it
-  logger.println(parseGll(inputSerial8));
+  gpsCanMessage();
 
   // Flush data to SD card regardless of buffer size
   if (timerFlush.check()) {
     logger.flush();
+    digitalToggle(blueLED);
   }
 
   // Print timestamp to serial & CAN occasionally
@@ -133,10 +140,28 @@ void loop() {
 }
 
 // Write to SD card buffer
-void parse_can_message() {
+void parseCanMessage() {
   while (fCAN.read(msg_rx) || sCAN.read(msg_rx) || tCAN.read(msg_rx)) {
     write_to_SD(&msg_rx); // if this fills up this will take 8ms to write
   }
+}
+
+void gpsCanMessage() {
+  String global_pos = (parseGll(inputSerial8));
+  // Calculate Time
+  uint64_t sec_epoch = Teensy3Clock.get();
+  if (sec_epoch != last_sec_epoch) {
+    global_ms_offset = millis() % 1000;
+    last_sec_epoch = sec_epoch;
+  }
+  uint64_t current_time =
+      sec_epoch * 1000 + (millis() - global_ms_offset) % 1000;
+
+  // Log to SD
+  logger.print(String(current_time) + ",");
+  logger.print(String(gpsID) + ",");
+  logger.print(String(strlen(global_pos.c_str())) + ",");
+  logger.println(global_pos);
 }
 
 // Build buffer logger till the timer ticks or buffer fills
@@ -181,24 +206,6 @@ void serialEvent8() {
       IsReadySerial8 = true;
     }
   }
-}
-
-// A function called once for fat32 file date stuff
-void sd_date_time(uint16_t *date, uint16_t *time) {
-  // return date using FAT_DATE macro to format fields
-  *date = FAT_DATE(year(), month(), day());
-  // return time using FAT_TIME macro to format fields
-  *time = FAT_TIME(hour(), minute(), second());
-}
-
-// This function makes me sad
-String date_time(int time) {
-  String outString = "MDY_" + String(month(time)) + "-" + String(day(time)) +
-                     "-" + String(year(time)) + "_HMS_" + String(hour(time)) +
-                     "-" + String(minute(time)) + "-" + String(second(time)) +
-                     ".CSV";
-
-  return outString;
 }
 
 // Structure
@@ -254,8 +261,8 @@ String parseGll(String msg) {
   char mode = msg[i];
 
   // set output string to whatever
-  String output = String(degreeToDecimal(lat_raw, latNS), 7) + "," +
-                  String(degreeToDecimal(lon_raw, lonEW), 7) + ",";
+  String output = String(degreeToDecimal(lat_raw, latNS), 7) + "-" +
+                  String(degreeToDecimal(lon_raw, lonEW), 7);
 
   return output;
 }
@@ -348,7 +355,7 @@ String parseRmc(String msg) {
 }
 
 float degreeToDecimal(float num, byte sign) {
-  // Want to convert DDMM.MMMM to a decimal number DD.DDDDD
+  // Converts DDMM.MMMM to a decimal number DD.DDDDD
 
   int intpart = (int)num;
   float decpart = num - intpart;
@@ -363,4 +370,22 @@ float degreeToDecimal(float num, byte sign) {
     // Return negative degree
     return -(degree + (mins + decpart) / 60);
   }
+}
+
+// A function called once for fat32 file date stuff
+void sd_date_time(uint16_t *date, uint16_t *time) {
+  // return date using FAT_DATE macro to format fields
+  *date = FAT_DATE(year(), month(), day());
+  // return time using FAT_TIME macro to format fields
+  *time = FAT_TIME(hour(), minute(), second());
+}
+
+// This function makes me sad
+String date_time(int time) {
+  String outString = "MDY_" + String(month(time)) + "-" + String(day(time)) +
+                     "-" + String(year(time)) + "_HMS_" + String(hour(time)) +
+                     "-" + String(minute(time)) + "-" + String(second(time)) +
+                     ".CSV";
+
+  return outString;
 }
