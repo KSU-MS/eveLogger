@@ -1,8 +1,11 @@
 // Libs
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
 #include <Arduino.h>
 #include <FlexCAN_T4.h>
 #include <Metro.h>
 #include <SD.h>
+#include <SPI.h>
 #include <TimeLib.h>
 #include <Wire.h>
 
@@ -19,35 +22,61 @@ uint64_t global_ms_offset;       // Time calc things
 uint64_t last_sec_epoch;         // Time calc things 2
 Metro timerMsgRTC = Metro(1000); // Timer for saving to disk
 Metro timerFlush = Metro(50);    // Timer for sending time can
+Metro displayUp = Metro(1000);   // Timer for updating display info
+Metro gpsTimeOut = Metro(1000);  // Timer for gps timeout if not present
 File logger;                     // For saving to disk
+String printname;                // global thing for the filename
 String inputSerial8 = "";        // a string to hold incoming data
 boolean IsReadySerial8 = false;  // whether the string is complete
 int redLED = 36;                 // Pin for red LED
 int blueLED = 37;                // Pin for blue LED
+#define SCREEN_WIDTH 128         // OLED display width, in pixels
+#define SCREEN_HEIGHT 64         // OLED display height, in pixels
+#define OLED_RESET -1            // Reset pin # use -1 if unsure
+#define SCREEN_ADDRESS 0x3c      // See datasheet for Address
+
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
 // Define functions
 void parseCanMessage();                            // parse incoming msg
 void gpsCanMessage();                              // save global pos as can
 void write_to_SD(CAN_message_t *msg);              // write can msg to disk
 void sd_date_time(uint16_t *date, uint16_t *time); // for sd lib things
+void drawThing(String msg, String pos);            // Draw something idk
 String date_time(int time);                  // returns string of date/time
-float degreeToDecimal(float num, byte sign); // GPS conversion function
-String parseGll(String msg);                 // Parse GLL string function
 String parseRmc(String msg);                 // Parse RMC string function
+String parseGga(String msg);                 // Prase GGA string im tired
+float degreeToDecimal(float num, byte sign); // GPS conversion function
 
 void setup() {
   delay(1000); // Prevents wacky files when turning the car on and off
 
   // Wait for Serial to start
   Serial.begin(9600);
-  while (!Serial) {
+  // while (!Serial) {
+  // }
+
+  // Wait for GPS UART to start
+  Serial.println("Init GPS");
+  Serial8.begin(9600);
+  while (!Serial8) {
+    if (gpsTimeOut.check()) {
+      break;
+    }
   }
+
+  // Wait for display
+  if (!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
+    Serial.println(F("SSD1306 type display not present"));
+  }
+  display.display(); // You must call .display() after draw command to apply
 
   // COMMENT OUT THIS LINE AND PUSH ONCE RTC HAS BEEN SET!!!!
   // Teensy3Clock.set(1660351622); // set time (epoch) at powerup
   if (timeStatus() != timeSet) {
     Serial.println("RTC not set up, call Teensy3Clock.set(epoch)");
   } else {
+    setSyncProvider(Teensy3Clock.get());
     Serial.println("System date/time set to: ");
     Serial.print(Teensy3Clock.get());
   }
@@ -62,12 +91,6 @@ void setup() {
   tCAN.begin();
   tCAN.setBaudRate(500000);
 
-  // Wait for GPS UART to start
-  Serial.println("Init GPS");
-  Serial8.begin(9600);
-  while (!Serial8) {
-  }
-
   // page 12 of https://cdn-shop.adafruit.com/datasheets/PMTK_A11.pdf
   // checksum generator https://nmeachecksum.eqth.net/
   // you can set a value from 0 (disable) to 5 (output once every 5 pos fixes)
@@ -79,7 +102,7 @@ void setup() {
   // 5  NMEA_SEN_GSV,  // GPGSV interval - GNSS Satellites in View
   // 6-17           ,  // Reserved
   // 18 NMEA_SEN_MCHN, // PMTKCHN interval – GPS channel status
-  Serial8.println("$PMTK314,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0*29");
+  Serial8.println("$PMTK314,0,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0*28");
   // Set update loop to 10hz
   Serial8.println("$PMTK220,100*2F");
   Serial.println("GPS set");
@@ -100,6 +123,9 @@ void setup() {
   if (SD.exists(filename)) { // Print error if name is taken
     Serial.println("You generated a duplicate file name... Go check RTC.");
   }
+  printname = filename;
+
+  // Debug prints if it fails
   if (logger) { // Print on open
     Serial.print("Successfully opened SD file: ");
     Serial.println(filename);
@@ -112,6 +138,10 @@ void setup() {
   // Print CSV heading to the logfile
   logger.println("time,msg.id,msg.len,data");
   logger.flush();
+
+  // Do te ting
+  IsReadySerial8 = true;
+  Serial.println("Log start");
 }
 
 void loop() {
@@ -133,10 +163,6 @@ void loop() {
     // msg_tx.id=0x3FF;
     // CAN.write(msg_tx);
   }
-
-  // Reset vars
-  inputSerial8 = "";
-  IsReadySerial8 = false;
 }
 
 // Write to SD card buffer
@@ -144,24 +170,6 @@ void parseCanMessage() {
   while (fCAN.read(msg_rx) || sCAN.read(msg_rx) || tCAN.read(msg_rx)) {
     write_to_SD(&msg_rx); // if this fills up this will take 8ms to write
   }
-}
-
-void gpsCanMessage() {
-  String global_pos = (parseGll(inputSerial8));
-  // Calculate Time
-  uint64_t sec_epoch = Teensy3Clock.get();
-  if (sec_epoch != last_sec_epoch) {
-    global_ms_offset = millis() % 1000;
-    last_sec_epoch = sec_epoch;
-  }
-  uint64_t current_time =
-      sec_epoch * 1000 + (millis() - global_ms_offset) % 1000;
-
-  // Log to SD
-  logger.print(String(current_time) + ",");
-  logger.print(String(gpsID) + ",");
-  logger.print(String(strlen(global_pos.c_str())) + ",");
-  logger.println(global_pos);
 }
 
 // Build buffer logger till the timer ticks or buffer fills
@@ -208,66 +216,39 @@ void serialEvent8() {
   }
 }
 
-// Structure
-// $GPGLL,(lat),(N/S),(long),(E/W),(UTC),(status),(mode)*(checksum)
-// more at https://gpsd.gitlab.io/gpsd/NMEA.html
-String parseGll(String msg) {
-
-  // Check that the incoming string is GLL
-  if (!strstr(msg.c_str(), "GLL")) {
-    return "Ya shit wack, go check your GPS setup for GLL";
-  }
-
-  // Get length of str
-  int len = strlen(msg.c_str());
-
-  // Replace commas with end character '\0' to seperate into single strings
-  for (int j = 0; j < len; j++) {
-    if (msg[j] == ',' || msg[j] == '*') {
-      msg[j] = '\0';
+void gpsCanMessage() {
+  if (IsReadySerial8) {
+    // Update display
+    if (displayUp.check()) {
+      display.clearDisplay();
+      drawThing(printname, "top");
+      drawThing(parseGga(inputSerial8), "bot");
     }
+
+    // Get GPS data
+    String global_pos = (parseRmc(inputSerial8));
+
+    // Calculate Time
+    uint64_t sec_epoch = Teensy3Clock.get();
+    if (sec_epoch != last_sec_epoch) {
+      global_ms_offset = millis() % 1000;
+      last_sec_epoch = sec_epoch;
+    }
+    uint64_t current_time =
+        sec_epoch * 1000 + (millis() - global_ms_offset) % 1000;
+
+    // Log to SD
+    logger.print(String(current_time) + ",");
+    logger.print(String(gpsID) + ",");
+    logger.print(String(strlen(global_pos.c_str())) + ",");
+    logger.println(global_pos);
+
+    // Reset vars
+    inputSerial8 = "";
+    IsReadySerial8 = false;
   }
-
-  // A lil working var
-  int i = 0;
-
-  // Go to string i and rip things
-  // Raw lattitude in degrees
-  i += strlen(&msg[i]) + 1;
-  float lat_raw = atof(&msg[i]);
-
-  // North or South char
-  i += strlen(&msg[i]) + 1;
-  char latNS = msg[i];
-
-  // Raw longitude in degrees
-  i += strlen(&msg[i]) + 1;
-  float lon_raw = atof(&msg[i]);
-
-  // East or West char
-  i += strlen(&msg[i]) + 1;
-  char lonEW = msg[i];
-
-  // UTC time
-  i += strlen(&msg[i]) + 1;
-  float utc = atof(&msg[i]);
-
-  // Is data valid (A) or not (V)
-  i += strlen(&msg[i]) + 1;
-  char valid = msg[i];
-
-  // FAA mode
-  i += strlen(&msg[i]) + 1;
-  char mode = msg[i];
-
-  // set output string to whatever
-  String output = String(degreeToDecimal(lat_raw, latNS), 7) + "-" +
-                  String(degreeToDecimal(lon_raw, lonEW), 7);
-
-  return output;
 }
 
-// Unfinished, RMC has a lot more data to parse
 // Structure
 // $GPRMC,time,status,lat,N/S,lon,E/W,Speed,degrees true,
 // date,degrees,FAA mode,Nav status*checksum
@@ -276,7 +257,7 @@ String parseRmc(String msg) {
 
   // Check that the incoming string is GLL
   if (!strstr(msg.c_str(), "RMC")) {
-    return "Ya shit wack, go check your GPS setup for RMC";
+    return "";
   }
 
   // Get length of str
@@ -303,19 +284,19 @@ String parseRmc(String msg) {
 
   // Raw lattitude in degrees
   i += strlen(&msg[i]) + 1;
-  float lat_raw = atof(&msg[i]);
+  float lat = atof(&msg[i]);
 
   // North or South char
   i += strlen(&msg[i]) + 1;
-  char latNS = msg[i];
+  char NS = msg[i];
 
   // Raw longitude in degrees
   i += strlen(&msg[i]) + 1;
-  float lon_raw = atof(&msg[i]);
+  float lon = atof(&msg[i]);
 
   // East or West char
   i += strlen(&msg[i]) + 1;
-  char lonEW = msg[i];
+  char EW = msg[i];
 
   // spped
   i += strlen(&msg[i]) + 1;
@@ -335,7 +316,7 @@ String parseRmc(String msg) {
 
   // East or West char
   i += strlen(&msg[i]) + 1;
-  char lonEWdegree = msg[i];
+  char EWdegree = msg[i];
 
   // FAA mode
   i += strlen(&msg[i]) + 1;
@@ -347,15 +328,117 @@ String parseRmc(String msg) {
   char status = msg[i];
 
   // set output string to whatever
-  String output = String(degreeToDecimal(lat_raw, latNS), 7) + "," +
-                  String(degreeToDecimal(lon_raw, lonEW), 7) + "," +
-                  String(speed, 4);
+  String output = String(degreeToDecimal(lat, NS), 7) + "-" +
+                  String(degreeToDecimal(lon, EW), 7) + "-" + String(speed, 1);
 
   return output;
 }
 
+// Structure
+// $GPGGA,UTC,Lat,N/S,Lon,E/W,GPS Quality,# of sats,
+// Precision, Altitude,Units of Altitude,Geoidal separation,
+// Unit of Geoidal separation,Age of differential,station ID*Checksum
+String parseGga(String msg) {
+
+  // Check that the incoming string is GGA
+  if (!strstr(msg.c_str(), "GGA")) {
+    return "";
+  }
+
+  // Get length of str
+  int len = strlen(msg.c_str());
+
+  // Replace commas with end character '\0' to seperate into single strings
+  for (int j = 0; j < len; j++) {
+    if (msg[j] == ',' || msg[j] == '*') {
+      msg[j] = '\0';
+    }
+  }
+
+  // A lil working var
+  int i = 0;
+
+  // Go to string i and rip things
+  // UTC time
+  i += strlen(&msg[i]) + 1;
+  float utc = atof(&msg[i]);
+
+  // Lat
+  i += strlen(&msg[i]) + 1;
+  float lat = atof(&msg[i]);
+
+  // N/S
+  i += strlen(&msg[i]) + 1;
+  char NS = msg[i];
+
+  // Lon
+  i += strlen(&msg[i]) + 1;
+  float lon = atof(&msg[i]);
+
+  // E/W
+  i += strlen(&msg[i]) + 1;
+  char EW = msg[i];
+
+  // GPS quality
+  // 0 - fix not available,
+  // 1 - GPS fix,
+  // 2 - Differential GPS fix(values above 2 are 2.3 features)
+  // 3 = PPS fix
+  // 4 = Real Time Kinematic
+  // 5 = Float RTK
+  // 6 = estimated(dead reckoning)
+  // 7 = Manual input mode
+  // 8 = Simulation mode
+  i += strlen(&msg[i]) + 1;
+  int quality = atof(&msg[i]);
+
+  // Sats locked
+  i += strlen(&msg[i]) + 1;
+  int locked = atof(&msg[i]);
+
+  // precision
+  i += strlen(&msg[i]) + 1;
+  float precision = atof(&msg[i]);
+
+  // altitude
+  i += strlen(&msg[i]) + 1;
+  float altitude = atof(&msg[i]);
+
+  // altitude unit
+  i += strlen(&msg[i]) + 1;
+  char altitudeChar = msg[i];
+
+  // The vertical distance between the surface of the
+  // Earth and the surface of a model of the Earth
+  // Geoidal separation
+  i += strlen(&msg[i]) + 1;
+  float gSep = atof(&msg[i]);
+
+  // Geoidal separation unit
+  i += strlen(&msg[i]) + 1;
+  char gSepChar = msg[i];
+
+  // Age of differential GPS data in seconds
+  i += strlen(&msg[i]) + 1;
+  float age = atof(&msg[i]);
+
+  // Station ID
+  i += strlen(&msg[i]) + 1;
+  int station = atof(&msg[i]);
+
+  // set output string to whatever
+  // String output = String(degreeToDecimal(lat, NS), 7) + "," +
+  //                 String(degreeToDecimal(lon, EW), 7) + "," + String(quality)
+  //                 +
+  //                 "," + String(locked) + "," + '\n';
+
+  String output = "Q:" + String(quality) + "  #:" + String(locked);
+
+  return output;
+}
+
+// Want to convert DDMM.MMMM to a decimal number DD.DDDDD? Slap it into this.
 float degreeToDecimal(float num, byte sign) {
-  // Converts DDMM.MMMM to a decimal number DD.DDDDD
 
   int intpart = (int)num;
   float decpart = num - intpart;
@@ -370,6 +453,26 @@ float degreeToDecimal(float num, byte sign) {
     // Return negative degree
     return -(degree + (mins + decpart) / 60);
   }
+}
+
+// It take string in, and it puts shit onto display
+void drawThing(String msg, String pos) {
+  display.setTextSize(1);              // Normal 1:1 pixel scale
+  display.setTextColor(SSD1306_WHITE); // Draw white text
+  display.cp437(true);                 // Use full 256 char 'Code Page 437' font
+
+  if (pos == "top") {
+    display.setCursor(0, 0);
+    display.print(msg);
+  } else if (pos == "bot") {
+    display.setTextSize(2);
+    display.setCursor(0, 32);
+    display.print(msg);
+  } else {
+    return;
+  }
+
+  display.display();
 }
 
 // A function called once for fat32 file date stuff
