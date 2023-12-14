@@ -19,6 +19,10 @@
 /// Global Variables
 ///
 
+// pins for LEDs
+int redLED = 36;
+int blueLED = 37;
+
 // Time calc vars
 uint64_t global_ms_offset;
 uint64_t last_sec_epoch;
@@ -38,63 +42,41 @@ FlexCAN_T4<CAN3, RX_SIZE_256, TX_SIZE_16> tCAN;
 static CAN_message_t msg_rx;
 static CAN_message_t msg_tx;
 
-#ifdef HAS_GPS
-Metro gps_timeout = Metro(1000); // GPS timeout if not present
-String gps_id = "";              // Whatever ID you want for your fake can msg
-String input_serial8 = "";       // a string to hold incoming data
-boolean ready_serial8 = true;    // whether the string is complete
-#endif
-
-#ifdef HAS_NAV
-#include "nav.hpp"
-Metro nav_timeout = Metro(1000);  // NAV timeout if not present
-void nav_can_msg();               // save nav data as CAN msg
-String read_nav_data(int option); // read nav data
-void check_sync_byte(void);       // check for new msg
-unsigned short calculate_imu_crc(byte data[], unsigned int length); // check msg
-float degree_to_decimal(float num, byte sign); // GPS conversion function
-#endif
-
-int redLED = 36;  // Pin for red LED
-int blueLED = 37; // Pin for blue LED
-
-#ifdef HAS_DIS
-Metro displayUp = Metro(1000); // Timer for updating display info
-#define SCREEN_WIDTH 128       // OLED display width, in pixels
-#define SCREEN_HEIGHT 64       // OLED display height, in pixels
-#define OLED_RESET -1          // Reset pin # use -1 if unsure
-#define SCREEN_ADDRESS 0x3c    // See datasheet for Address
-
-Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
-#endif
-
-///
-/// Function defs
-///
-
+// Function defs
 void read_can_message();                            // parse incoming msg
 void write_to_SD(CAN_message_t *msg);               // write can msg to disk
 void sd_date_time(uint16_t *date, uint16_t *time);  // for sd lib things
 String date_time(int time);                         // returns string of date
 time_t get_t4_time() { return Teensy3Clock.get(); } // Fuck this cursed cast
 
+// GPS module
 #ifdef HAS_GPS
-void gps_can_msg();                            // save global pos as CAN msg
-String parse_rmc(String msg);                  // Parse RMC string function
-String parse_gga(String msg);                  // Prase GGA string im tired
-float degree_to_decimal(float num, byte sign); // GPS conversion function
+#include "gps.hpp"
+Metro gps_timeout = Metro(1000); // GPS timeout if not present
+void gps_can_msg();              // save global pos as CAN msg
 #endif
 
+// NAV module
 #ifdef HAS_NAV
+#include "nav.hpp"
+Metro nav_timeout = Metro(1000); // NAV timeout if not present
+void nav_can_msg();              // save nav data as CAN msg
 #endif
 
-#ifdef HAS_DIS
-void draw_thing(String msg, String pos); // Draw something idk
-#endif
-
+// TEL module
 #ifdef HAS_TEL
 Metro tel_timeout = Metro(1000); // TEL timeout if not present
 String serial2_out = "";         // a string to hold sending data
+#endif
+
+// DIS module
+#ifdef HAS_DIS
+void draw_thing(String msg, String pos); // Draw something idk
+Metro displayUp = Metro(1000);           // Timer for updating display info
+#define SCREEN_ADDRESS 0x3c              // See datasheet for Address
+
+// in order of appearance, Width, Height, SPI pin, Reset pint
+Adafruit_SSD1306 display(128, 64, &Wire, -1);
 #endif
 
 void setup() {
@@ -119,62 +101,7 @@ void setup() {
       break;
     }
   }
-#endif
 
-#ifdef HAS_NAV
-  // Wait for NAV UART to start
-  Serial.println("Init NAV");
-  Serial8.begin(115200);
-  while (!Serial8) {
-    if (nav_timeout.check()) {
-      Serial.println("No NAV unit");
-      break;
-    }
-  }
-#endif
-
-#ifdef HAS_DIS
-  // Wait for display
-  if (!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
-    Serial.println(F("SSD1306 type display not present"));
-  }
-  display.display(); // You must call .display() after draw command to apply
-#endif
-
-#ifdef HAS_TEL
-  // Wait for TEL UART to start
-  Serial.println("Init TEL");
-  Serial2.begin(115200);
-  while (!Serial2) {
-    if (tel_timeout.check()) {
-      Serial.println("No TEL unit");
-      break;
-    }
-  }
-#endif
-
-  Serial.println("Setting up time");
-  setSyncProvider(get_t4_time);
-  // COMMENT OUT THIS LINE AND PUSH ONCE RTC HAS BEEN SET!!!!
-  // Teensy3Clock.set(1702575324); // set time (epoch) at powerup
-  if (timeStatus() != timeSet) {
-    Serial.println("RTC not set up, call Teensy3Clock.set(epoch)");
-  } else {
-    Serial.print("System date/time set to: ");
-    Serial.println(Teensy3Clock.get());
-  }
-  last_sec_epoch = Teensy3Clock.get();
-
-  // Start CAN thingies
-  // FLEXCAN0_MCR &= 0xFFFDFFFF; // Enables CAN self-reception. Borked
-  fCAN.begin();
-  fCAN.setBaudRate(500000);
-  sCAN.begin();
-  sCAN.setBaudRate(500000);
-  tCAN.begin();
-  tCAN.setBaudRate(500000);
-
-#ifdef HAS_GPS
   // page 12 of https://cdn-shop.adafruit.com/datasheets/PMTK_A11.pdf
   // checksum generator https://nmeachecksum.eqth.net/
   // you can set a value from 0 (disable) to 5 (output once every 5 pos fixes)
@@ -193,11 +120,62 @@ void setup() {
 #endif
 
 #ifdef HAS_NAV
+  // Wait for NAV UART to start
+  Serial.println("Init NAV");
+  Serial8.begin(115200);
+  while (!Serial8) {
+    if (nav_timeout.check()) {
+      Serial.println("No NAV unit");
+      break;
+    }
+  }
+
   // Please just use the Vector Nav Control Center tool to generate the messages
   // I fucking hate calculating these by hand so much don't torture yourself
   Serial8.println("$VNWRG,75,1,40,01,11EA*614A");
   Serial.println("NAV set");
 #endif
+
+#ifdef HAS_TEL
+  // Wait for TEL UART to start
+  Serial.println("Init TEL");
+  Serial2.begin(115200);
+  while (!Serial2) {
+    if (tel_timeout.check()) {
+      Serial.println("No TEL unit");
+      break;
+    }
+  }
+#endif
+
+#ifdef HAS_DIS
+  // Wait for display
+  if (!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
+    Serial.println(F("SSD1306 type display not present"));
+  }
+  display.display(); // You must call .display() after draw command to apply
+#endif
+
+  // Start CAN thingies
+  // FLEXCAN0_MCR &= 0xFFFDFFFF; // Enables CAN self-reception. Borked
+  fCAN.begin();
+  fCAN.setBaudRate(500000);
+  sCAN.begin();
+  sCAN.setBaudRate(500000);
+  tCAN.begin();
+  tCAN.setBaudRate(500000);
+
+  Serial.println("Setting up time");
+  setSyncProvider(get_t4_time);
+  // COMMENT OUT THIS LINE AND PUSH ONCE RTC HAS BEEN SET!!!!
+  // Teensy3Clock.set(1702575324); // set time (epoch) at powerup
+  if (timeStatus() != timeSet) {
+    Serial.println("RTC not set up, call Teensy3Clock.set(epoch)");
+  } else {
+    Serial.print("System date/time set to: ");
+    Serial.println(Teensy3Clock.get());
+  }
+  last_sec_epoch = Teensy3Clock.get();
 
   // Set up SD card
   Serial.println("Initializing SD card...");
@@ -315,70 +293,6 @@ void write_to_SD(CAN_message_t *msg) {
 }
 
 #ifdef HAS_NAV
-// Read the NAV bytes
-navData read_nav_data() {
-  // Read the bytes into an array
-  Serial8.readBytes(in, 87);
-
-  // Grab the checksum
-  checksum.b[0] = in[86];
-  checksum.b[1] = in[85];
-
-  // If the checksum is correct
-  if (calculate_imu_crc(in, 85) == checksum.s) {
-    // Calc time
-    for (int i = 0; i < 8; i++) {
-      ti.b[i] = in[3 + i];
-    }
-
-    // Calc Attitude and Rates
-    for (int i = 0; i < 4; i++) {
-      yaw.b[i] = in[11 + i];
-      pit.b[i] = in[15 + i];
-      rol.b[i] = in[19 + i];
-      W_x.b[i] = in[23 + i];
-      W_y.b[i] = in[27 + i];
-      W_z.b[i] = in[31 + i];
-    }
-
-    // Calc Position
-    for (int i = 0; i < 8; i++) {
-      lat.b[i] = in[35 + i];
-      lon.b[i] = in[43 + i];
-      alt.b[i] = in[51 + i];
-    }
-
-    // Calc Velocity & Acceleration
-    for (int i = 0; i < 4; i++) {
-      v_n.b[i] = in[59 + i];
-      v_e.b[i] = in[63 + i];
-      v_d.b[i] = in[67 + i];
-      a_x.b[i] = in[71 + i];
-      a_y.b[i] = in[75 + i];
-      a_z.b[i] = in[79 + i];
-    }
-
-    // "Calc" INS state
-    for (int i = 0; i < 2; i++) {
-      ins.b[i] = in[83 + i];
-    }
-
-    // Return values in readable format
-    return navData{
-        String(ti.f, 10),
-        String(yaw.f, 10) + "+" + String(pit.f, 10) + "+" + String(rol.f, 10),
-        String(W_x.f, 10) + "+" + String(W_y.f, 10) + "+" + String(W_z.f, 10),
-        String(lat.f, 10) + "+" + String(lon.f, 10) + "+" + String(alt.f, 10),
-        String(v_n.f, 10) + "+" + String(v_e.f, 10) + "+" + String(v_d.f, 10),
-        String(a_x.f, 10) + "+" + String(a_y.f, 10) + "+" + String(a_z.f, 10),
-        String(ins.f),
-    };
-  }
-
-  // Return nothing if shits fucked
-  return navData{};
-}
-
 void nav_can_msg() {
   // Reset nav state
   nav_ready = false;
@@ -432,31 +346,6 @@ void nav_can_msg() {
     }
 #endif
   }
-}
-
-// Check for the sync byte (0xFA)
-void check_sync_byte(void) {
-  for (int i = 0; i < 6; i++) {
-    Serial8.readBytes(in, 1);
-    if (in[0] == 0xFA) {
-      nav_ready = true;
-      break;
-    }
-  }
-}
-
-// Calculate the 16-bit CRC for the given ASCII or binary message.
-unsigned short calculate_imu_crc(byte data[], unsigned int length) {
-  unsigned int i;
-  unsigned short crc = 0;
-  for (i = 0; i < length; i++) {
-    crc = (byte)(crc >> 8) | (crc << 8);
-    crc ^= data[i];
-    crc ^= (byte)(crc & 0xff) >> 4;
-    crc ^= crc << 12;
-    crc ^= (crc & 0x00ff) << 5;
-  }
-  return crc;
 }
 #endif
 
@@ -520,213 +409,6 @@ void gps_can_msg() {
   }
 }
 
-// Structure
-// $GPRMC,time,status,lat,N/S,lon,E/W,Speed,degrees true,
-// date,degrees,FAA mode,Nav status*checksum
-// more at https://gpsd.gitlab.io/gpsd/NMEA.html
-String parse_rmc(String msg) {
-
-  // Check that the incoming string is RMC
-  if (!strstr(msg.c_str(), "RMC")) {
-    return "";
-  }
-
-  // Get length of str
-  int len = strlen(msg.c_str());
-
-  // Replace commas with end character '\0' to seperate into single strings
-  for (int j = 0; j < len; j++) {
-    if (msg[j] == ',' || msg[j] == '*') {
-      msg[j] = '\0';
-    }
-  }
-
-  // A lil working var
-  int i = 0;
-
-  // Go to string i and rip things
-  // UTC time
-  i += strlen(&msg[i]) + 1;
-  float utc = atof(&msg[i]);
-
-  // Is data valid (A) or not (V)
-  i += strlen(&msg[i]) + 1;
-  char valid = msg[i];
-
-  // Raw lattitude in degrees
-  i += strlen(&msg[i]) + 1;
-  float lat = atof(&msg[i]);
-
-  // North or South char
-  i += strlen(&msg[i]) + 1;
-  char NS = msg[i];
-
-  // Raw longitude in degrees
-  i += strlen(&msg[i]) + 1;
-  float lon = atof(&msg[i]);
-
-  // East or West char
-  i += strlen(&msg[i]) + 1;
-  char EW = msg[i];
-
-  // spped
-  i += strlen(&msg[i]) + 1;
-  float speed = atof(&msg[i]);
-
-  // Degrees true
-  i += strlen(&msg[i]) + 1;
-  float dtrue = atof(&msg[i]);
-
-  // Date in ddmmyy
-  i += strlen(&msg[i]) + 1;
-  char date = msg[i];
-
-  // Degrees magnetic
-  i += strlen(&msg[i]) + 1;
-  float magnetic = atof(&msg[i]);
-
-  // East or West char
-  i += strlen(&msg[i]) + 1;
-  char EWdegree = msg[i];
-
-  // FAA mode
-  i += strlen(&msg[i]) + 1;
-  char mode = msg[i];
-
-  // A=autonomous, D=differential, E=Estimated,
-  // M=Manual input mode N=not valid, S=Simulator, V = Valid
-  i += strlen(&msg[i]) + 1;
-  char status = msg[i];
-
-  // set output string to whatever
-  String output = String(degree_to_decimal(lat, NS), 7) + "+" +
-                  String(degree_to_decimal(lon, EW), 7) + "+" +
-                  String(speed, 1);
-
-  return output;
-}
-
-// Structure
-// $GPGGA,UTC,Lat,N/S,Lon,E/W,GPS Quality,# of sats,
-// Precision, Altitude,Units of Altitude,Geoidal separation,
-// Unit of Geoidal separation,Age of differential,station ID*Checksum
-String parse_gga(String msg) {
-
-  // Check that the incoming string is GGA
-  if (!strstr(msg.c_str(), "GGA")) {
-    return "";
-  }
-
-  // Get length of str
-  int len = strlen(msg.c_str());
-
-  // Replace commas with end character '\0' to seperate into single strings
-  for (int j = 0; j < len; j++) {
-    if (msg[j] == ',' || msg[j] == '*') {
-      msg[j] = '\0';
-    }
-  }
-
-  // A lil working var
-  int i = 0;
-
-  // Go to string i and rip things
-  // UTC time
-  i += strlen(&msg[i]) + 1;
-  float utc = atof(&msg[i]);
-
-  // Lat
-  i += strlen(&msg[i]) + 1;
-  float lat = atof(&msg[i]);
-
-  // N/S
-  i += strlen(&msg[i]) + 1;
-  char NS = msg[i];
-
-  // Lon
-  i += strlen(&msg[i]) + 1;
-  float lon = atof(&msg[i]);
-
-  // E/W
-  i += strlen(&msg[i]) + 1;
-  char EW = msg[i];
-
-  // GPS quality
-  // 0 - fix not available,
-  // 1 - GPS fix,
-  // 2 - Differential GPS fix(values above 2 are 2.3 features)
-  // 3 = PPS fix
-  // 4 = Real Time Kinematic
-  // 5 = Float RTK
-  // 6 = estimated(dead reckoning)
-  // 7 = Manual input mode
-  // 8 = Simulation mode
-  i += strlen(&msg[i]) + 1;
-  int quality = atof(&msg[i]);
-
-  // Sats locked
-  i += strlen(&msg[i]) + 1;
-  int locked = atof(&msg[i]);
-
-  // precision
-  i += strlen(&msg[i]) + 1;
-  float precision = atof(&msg[i]);
-
-  // altitude
-  i += strlen(&msg[i]) + 1;
-  float altitude = atof(&msg[i]);
-
-  // altitude unit
-  i += strlen(&msg[i]) + 1;
-  char altitudeChar = msg[i];
-
-  // The vertical distance between the surface of the
-  // Earth and the surface of a model of the Earth
-  // Geoidal separation
-  i += strlen(&msg[i]) + 1;
-  float gSep = atof(&msg[i]);
-
-  // Geoidal separation unit
-  i += strlen(&msg[i]) + 1;
-  char gSepChar = msg[i];
-
-  // Age of differential GPS data in seconds
-  i += strlen(&msg[i]) + 1;
-  float age = atof(&msg[i]);
-
-  // Station ID
-  i += strlen(&msg[i]) + 1;
-  int station = atof(&msg[i]);
-
-  // set output string to whatever
-  // String output = String(degree_to_decimal(lat, NS), 7) + "," +
-  //                 String(degree_to_decimal(lon, EW), 7) + "," +
-  //                 String(quality)
-  //                 +
-  //                 "," + String(locked) + "," + '\n';
-
-  String output = "Q:" + String(quality) + "  #:" + String(locked);
-
-  return output;
-}
-
-// Want to convert DDMM.MMMM to a decimal number DD.DDDDD? Slap it into this.
-float degree_to_decimal(float num, byte sign) {
-
-  int intpart = (int)num;
-  float decpart = num - intpart;
-
-  int degree = (int)(intpart / 100);
-  int mins = (int)(intpart % 100);
-
-  if (sign == 'N' || sign == 'E') {
-    // Return positive degree
-    return (degree + (mins + decpart) / 60);
-  } else {
-    // Return negative degree
-    return -(degree + (mins + decpart) / 60);
-  }
-}
 #endif
 
 #ifdef HAS_DIS
