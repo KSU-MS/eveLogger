@@ -44,7 +44,7 @@ static CAN_message_t msg_tx;
 
 // Function defs
 void read_can_message();                            // parse incoming msg
-void write_to_SD(CAN_message_t *msg);               // write can msg to disk
+void write_to_SD(CAN_message_t *msg, uint8_t bus);  // write can msg to disk
 void sd_date_time(uint16_t *date, uint16_t *time);  // for sd lib things
 String date_time(int time);                         // returns string of date
 time_t get_t4_time() { return Teensy3Clock.get(); } // Fuck this cursed cast
@@ -242,15 +242,19 @@ void loop() {
   }
 }
 
-// While CAN packets are coming in, save them
+// While CAN packets are coming in, save the incoming msg and bus of origin
 void read_can_message() {
-  while (fCAN.read(msg_rx) || sCAN.read(msg_rx) || tCAN.read(msg_rx)) {
-    write_to_SD(&msg_rx); // if this fills up this will take 8ms to write
+  if (fCAN.read(msg_rx)) {
+    write_to_SD(&msg_rx, 0);
+  } else if (sCAN.read(msg_rx)) {
+    write_to_SD(&msg_rx, 1);
+  } else if (tCAN.read(msg_rx)) {
+    write_to_SD(&msg_rx, 2);
   }
 }
 
 // Build buffer "logger" till the timer ticks or buffer fills
-void write_to_SD(CAN_message_t *msg) {
+void write_to_SD(CAN_message_t *msg, uint8_t bus) {
   // Calculate Time
   uint64_t sec_epoch = Teensy3Clock.get();
   if (sec_epoch != last_sec_epoch) {
@@ -262,6 +266,8 @@ void write_to_SD(CAN_message_t *msg) {
 
   // Log to SD
   logger.print(current_time);
+  logger.print(",");
+  logger.print(bus);
   logger.print(",");
   logger.print(msg->id, HEX);
   logger.print(",");
@@ -277,7 +283,7 @@ void write_to_SD(CAN_message_t *msg) {
   digitalToggle(13); // Flip LED state for signs of life
 
 #ifdef HAS_TEL
-  // Append shit to string
+  // Append things to string
   serial2_out += String(current_time) + ",";
   serial2_out += String(msg->id, HEX) + ",";
   for (int i = 0; i < msg->len; i++) {

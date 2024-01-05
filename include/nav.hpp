@@ -14,15 +14,15 @@ unsigned short calculate_imu_crc(byte data[], unsigned int length); // check msg
 
 // Some global vars
 bool nav_ready = false; // check if the sync byte (0xFA) is detected
-byte in[87];            // array to save data send from the IMU
+byte in[90];            // array to save data send from the IMU
 
 // CAN IDs for the diffrent feilds
-String ti_id = "0xNT";
-String gyro_id = "0xNG";
-String rate_id = "0xNR";
-String pos_id = "0xNP";
-String vel_id = "0xNV";
-String accel_id = "0xNA";
+String ti_id = "0x7FF";
+String gyro_id = "0x7FE";
+String rate_id = "0x7FD";
+String pos_id = "0x7FC";
+String vel_id = "0x7FB";
+String accel_id = "0x7FA";
 
 // Custom struct for reading shit from
 class navData {
