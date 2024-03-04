@@ -3,3 +3,4 @@
 .ccls
 Makefile
 compile_commands.json
+.vscode

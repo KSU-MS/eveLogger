@@ -6,7 +6,8 @@
 
 #include <Arduino.h>
 
-// More internal functions
+// More functions
+void init_GPS();
 String parse_rmc(String msg);                  // Parse RMC string function
 String parse_gga(String msg);                  // Prase GGA string im tired
 float degree_to_decimal(float num, byte sign); // GPS conversion function
@@ -15,6 +16,26 @@ float degree_to_decimal(float num, byte sign); // GPS conversion function
 String gps_id = "";           // Whatever ID you want for your fake can msg
 String input_serial8 = "";    // a string to hold incoming data
 boolean ready_serial8 = true; // whether the string is complete
+
+void init_GPS() {
+  // Wait for GPS UART to start
+  Serial8.begin(9600);
+
+  // page 12 of https://cdn-shop.adafruit.com/datasheets/PMTK_A11.pdf
+  // checksum generator https://nmeachecksum.eqth.net/
+  // you can set a value from 0 (disable) to 5 (output once every 5 pos fixes)
+  // 0  NMEA_SEN_GLL,  // GPGLL interval - Lat & long
+  // 1  NMEA_SEN_RMC,  // GPRMC interval - Recommended Minimum Specific GNSS
+  // 2  NMEA_SEN_VTG,  // GPVTG interval - Course over Ground and Ground Speed
+  // 3  NMEA_SEN_GGA,  // GPGGA interval - GPS Fix Data
+  // 4  NMEA_SEN_GSA,  // GPGSA interval - GNSS DOPS and Active Satellites
+  // 5  NMEA_SEN_GSV,  // GPGSV interval - GNSS Satellites in View
+  // 6-17           ,  // Reserved
+  // 18 NMEA_SEN_MCHN, // PMTKCHN interval – GPS channel status
+  Serial8.println("$PMTK314,0,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0*28");
+  // Set update loop to 10hz
+  Serial8.println("$PMTK220,100*2F");
+}
 
 // Structure
 // $GPRMC,time,status,lat,N/S,lon,E/W,Speed,degrees true,

@@ -1,6 +1,4 @@
 // Libs
-#include <Adafruit_GFX.h>
-#include <Adafruit_SSD1306.h>
 #include <Arduino.h>
 #include <FlexCAN_T4.h>
 #include <Metro.h>
@@ -12,8 +10,8 @@
 // Some Global toggles for features
 // #define HAS_DIS // Enable/Disable Display code
 // #define HAS_GPS // Enable/Disable GPS data
-#define HAS_NAV // Enable/Disable Vector Nav Boi
-#define HAS_TEL // Enable/Disable XBee stuffs
+// #define HAS_NAV // Enable/Disable Vector Nav Boi
+// #define HAS_TEL // Enable/Disable XBee stuffs
 
 ///
 /// Global Variables
@@ -39,12 +37,11 @@ String printname; // global thing for the filename
 FlexCAN_T4<CAN1, RX_SIZE_256, TX_SIZE_16> fCAN;
 FlexCAN_T4<CAN2, RX_SIZE_256, TX_SIZE_16> sCAN;
 FlexCAN_T4<CAN3, RX_SIZE_256, TX_SIZE_16> tCAN;
-static CAN_message_t msg_rx;
-static CAN_message_t msg_tx;
+static CAN_message_t msg;
 
 // Function defs
 void read_can_message();                            // parse incoming msg
-void write_to_SD(CAN_message_t *msg, uint8_t bus);  // write can msg to disk
+void write_to_SD(CAN_message_t msg, uint8_t bus);   // write can msg to disk
 void sd_date_time(uint16_t *date, uint16_t *time);  // for sd lib things
 String date_time(int time);                         // returns string of date
 time_t get_t4_time() { return Teensy3Clock.get(); } // Fuck this cursed cast
@@ -59,24 +56,19 @@ void gps_can_msg();              // save global pos as CAN msg
 // NAV module
 #ifdef HAS_NAV
 #include "nav.hpp"
-Metro nav_timeout = Metro(1000); // NAV timeout if not present
-void nav_can_msg();              // save nav data as CAN msg
+navData nd;
+void nav_can_msg(); // save nav data as CAN msg
 #endif
 
 // TEL module
 #ifdef HAS_TEL
-Metro tel_timeout = Metro(1000); // TEL timeout if not present
-String serial2_out = "";         // a string to hold sending data
+Metro displayUp = Metro(1000); // Timer for updating display info
+#include "tel.hpp"
 #endif
 
 // DIS module
 #ifdef HAS_DIS
-void draw_thing(String msg, String pos); // Draw something idk
-Metro displayUp = Metro(1000);           // Timer for updating display info
-#define SCREEN_ADDRESS 0x3c              // See datasheet for Address
-
-// in order of appearance, Width, Height, SPI pin, Reset pint
-Adafruit_SSD1306 display(128, 64, &Wire, -1);
+#include "dis.hpp"
 #endif
 
 void setup() {
@@ -88,72 +80,29 @@ void setup() {
 
   // Wait for Serial to start
   Serial.begin(115200);
-  // while (!Serial)
-  //   ;
 
 #ifdef HAS_GPS
-  // Wait for GPS UART to start
   Serial.println("Init GPS");
-  Serial8.begin(9600);
-  while (!Serial8) {
-    if (gps_timeout.check()) {
-      Serial.println("No GPS unit");
-      break;
-    }
-  }
-
-  // page 12 of https://cdn-shop.adafruit.com/datasheets/PMTK_A11.pdf
-  // checksum generator https://nmeachecksum.eqth.net/
-  // you can set a value from 0 (disable) to 5 (output once every 5 pos fixes)
-  // 0  NMEA_SEN_GLL,  // GPGLL interval - Lat & long
-  // 1  NMEA_SEN_RMC,  // GPRMC interval - Recommended Minimum Specific GNSS
-  // 2  NMEA_SEN_VTG,  // GPVTG interval - Course over Ground and Ground Speed
-  // 3  NMEA_SEN_GGA,  // GPGGA interval - GPS Fix Data
-  // 4  NMEA_SEN_GSA,  // GPGSA interval - GNSS DOPS and Active Satellites
-  // 5  NMEA_SEN_GSV,  // GPGSV interval - GNSS Satellites in View
-  // 6-17           ,  // Reserved
-  // 18 NMEA_SEN_MCHN, // PMTKCHN interval – GPS channel status
-  Serial8.println("$PMTK314,0,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0*28");
-  // Set update loop to 10hz
-  Serial8.println("$PMTK220,100*2F");
+  init_GPS();
   Serial.println("GPS set");
 #endif
 
 #ifdef HAS_NAV
-  // Wait for NAV UART to start
   Serial.println("Init NAV");
-  Serial8.begin(115200);
-  while (!Serial8) {
-    if (nav_timeout.check()) {
-      Serial.println("No NAV unit");
-      break;
-    }
-  }
-
-  // Please just use the Vector Nav Control Center tool to generate the messages
-  // I fucking hate calculating these by hand so much don't torture yourself
-  Serial8.println("$VNWRG,75,1,40,01,11EA*614A");
+  nd.init();
   Serial.println("NAV set");
 #endif
 
 #ifdef HAS_TEL
-  // Wait for TEL UART to start
   Serial.println("Init TEL");
-  Serial2.begin(115200);
-  while (!Serial2) {
-    if (tel_timeout.check()) {
-      Serial.println("No TEL unit");
-      break;
-    }
-  }
+  init_TEL();
+  Serial.println("TEL set");
 #endif
 
 #ifdef HAS_DIS
-  // Wait for display
-  if (!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
-    Serial.println(F("SSD1306 type display not present"));
-  }
-  display.display(); // You must call .display() after draw command to apply
+  Serial.println("Init DIS");
+  init_DIS();
+  Serial.println("DIS set");
 #endif
 
   // Start CAN thingies
@@ -168,7 +117,7 @@ void setup() {
   Serial.println("Setting up time");
   setSyncProvider(get_t4_time);
   // COMMENT OUT THIS LINE AND PUSH ONCE RTC HAS BEEN SET!!!!
-  // Teensy3Clock.set(1702575324); // set time (epoch) at powerup
+  // Teensy3Clock.set(1705100622); // set time (epoch) at powerup
   if (timeStatus() != timeSet) {
     Serial.println("RTC not set up, call Teensy3Clock.set(epoch)");
   } else {
@@ -205,7 +154,7 @@ void setup() {
   }
 
   // Print CSV heading to the logfile
-  logger.println("time,msg.id,msg.len,data");
+  logger.println("bus,time,msg.id,msg.len,data");
   logger.flush();
 
   // Do te ting
@@ -234,7 +183,7 @@ void loop() {
     digitalToggle(blueLED);
   }
 
-  // Print timestamp to serial & CAN occasionally
+  // Print timestamp to serial & CAN
   if (timer_msg_RTC.check()) {
     Serial.println(Teensy3Clock.get());
     // msg_tx.id=0x3FF;
@@ -243,18 +192,23 @@ void loop() {
 }
 
 // While CAN packets are coming in, save the incoming msg and bus of origin
+// currently very ugly, should look at re-writing this
 void read_can_message() {
-  if (fCAN.read(msg_rx)) {
-    write_to_SD(&msg_rx, 0);
-  } else if (sCAN.read(msg_rx)) {
-    write_to_SD(&msg_rx, 1);
-  } else if (tCAN.read(msg_rx)) {
-    write_to_SD(&msg_rx, 2);
+  if (fCAN.read(msg)) {
+    write_to_SD(msg, 0);
+  }
+
+  if (sCAN.read(msg)) {
+    write_to_SD(msg, 1);
+  }
+
+  if (tCAN.read(msg)) {
+    write_to_SD(msg, 2);
   }
 }
 
 // Build buffer "logger" till the timer ticks or buffer fills
-void write_to_SD(CAN_message_t *msg, uint8_t bus) {
+void write_to_SD(CAN_message_t msg, uint8_t bus) {
   // Calculate Time
   uint64_t sec_epoch = Teensy3Clock.get();
   if (sec_epoch != last_sec_epoch) {
@@ -265,50 +219,35 @@ void write_to_SD(CAN_message_t *msg, uint8_t bus) {
       sec_epoch * 1000 + (millis() - global_ms_offset) % 1000;
 
   // Log to SD
-  logger.print(current_time);
-  logger.print(",");
-  logger.print(bus);
-  logger.print(",");
-  logger.print(msg->id, HEX);
-  logger.print(",");
-  logger.print(msg->len);
-  logger.print(",");
-  for (int i = 0; i < msg->len; i++) {
-    if (msg->buf[i] < 16) {
-      logger.print("0");
+  logger.print(current_time + ',');
+  logger.print(bus + ',');
+  logger.print(msg.id, HEX + ',');
+  logger.print(msg.len + ',');
+  for (int i = 0; i < msg.len; i++) {
+    if (msg.buf[i] < 16) {
+      logger.print('0');
     }
-    logger.print(msg->buf[i], HEX);
+    logger.print(msg.buf[i], HEX);
   }
   logger.println();
   digitalToggle(13); // Flip LED state for signs of life
 
 #ifdef HAS_TEL
-  // Append things to string
-  serial2_out += String(current_time) + ",";
-  serial2_out += String(msg->id, HEX) + ",";
-  for (int i = 0; i < msg->len; i++) {
-    if (msg->buf[i] < 16) {
-      serial2_out += "0";
-    }
-    serial2_out += String(msg->buf[i], HEX);
-  }
-
-  // Send as 1 thicc boi
-  Serial2.println(serial2_out);
+  send_packet(msg.id, msg.buf);
 #endif
 }
 
 #ifdef HAS_NAV
 void nav_can_msg() {
   // Reset nav state
-  nav_ready = false;
+  nd.nav_ready = false;
 
   // If we have more than 4 new bytes, see if its a new line
   if (Serial8.available() > 4)
-    check_sync_byte();
+    nd.check_sync_byte();
 
   // If check_sync_byte() set is_nav_ready true, do shit with the data
-  if (nav_ready) {
+  if (nd.nav_ready) {
     // Calculate Time
     uint64_t sec_epoch = Teensy3Clock.get();
     if (sec_epoch != last_sec_epoch) {
@@ -319,22 +258,16 @@ void nav_can_msg() {
         sec_epoch * 1000 + (millis() - global_ms_offset) % 1000;
 
     // Get NAV data
-    navData nd = read_nav_data();
+    nd.read_data();
 
-    logger.print(String(current_time) + ",");
-    logger.print(String(pos_id) + ",");
-    logger.print(String(strlen(nd.r_pos.c_str())) + ",");
-    logger.println(nd.r_pos);
+    // TODO: Make it use proper ID and structure
+    //  logger.print(String(current_time) + ",");
+    //  logger.print(String(pos_id) + ",");
+    //  logger.print(String(strlen(nd.r_pos.c_str())) + ",");
+    //  logger.println(nd.r_pos);
 
 #ifdef HAS_TEL
-    // Append shit to string
-    serial2_out += String(current_time) + ",";
-    serial2_out += String(pos_id) + ",";
-    serial2_out += String(strlen(nd.r_pos.c_str())) + ",";
-    serial2_out += String(nd.r_pos);
-
-    // Send as 1 thicc boi
-    Serial2.println(serial2_out);
+    send_packet(msg.id, msg.buf);
 #endif
 
 // Update the display with INS state
@@ -344,7 +277,7 @@ void nav_can_msg() {
     if (displayUp.check()) {
       display.clearDisplay();
       draw_thing(printname, "top");
-      if (nd.r_ins[0] != 2) {
+      if (nd.r_ins == 2) {
         draw_thing(String("NAV GOOD"), "bot");
       } else {
         draw_thing(String("NAV N/A"), "bot");
@@ -399,14 +332,7 @@ void gps_can_msg() {
     logger.println(global_pos);
 
 #ifdef HAS_TEL
-    // Append shit to string
-    serial2_out += String(current_time) + ",";
-    serial2_out += String(gps_id) + ",";
-    serial2_out += String(strlen(global_pos.c_str())) + ",";
-    serial2_out += String(global_pos);
-
-    // Send as 1 thicc boi
-    Serial2.println(serial2_out);
+    send_packet(msg.id, msg.buf);
 #endif
 
     // Reset vars
@@ -415,28 +341,6 @@ void gps_can_msg() {
   }
 }
 
-#endif
-
-#ifdef HAS_DIS
-// It take string in, and it puts shit onto display
-void draw_thing(String msg, String pos) {
-  display.setTextSize(1);              // Normal 1:1 pixel scale
-  display.setTextColor(SSD1306_WHITE); // Draw white text
-  display.cp437(true);                 // Use full 256 char 'Code Page 437' font
-
-  if (pos == "top") {
-    display.setCursor(0, 0);
-    display.print(msg);
-  } else if (pos == "bot") {
-    display.setTextSize(2);
-    display.setCursor(0, 32);
-    display.print(msg);
-  } else {
-    return;
-  }
-
-  display.display();
-}
 #endif
 
 // A function called once for fat32 file date stuff

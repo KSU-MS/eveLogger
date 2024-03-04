@@ -1,44 +1,44 @@
 #ifndef nav
 #define nav
 
-// Union functions for byte to usable fucking data conversions
-// IMU sends data as bytes in reverse order, the union functions are used to
-// convert this data into other data types to actually use it
+// Union functions for byte to usable data conversions as IMU sends data as
+// bytes in reverse order, the union functions are used to convert this data
+// into other data types to actually use it
 
 #include <Arduino.h>
 
-// Some internal functions
-String read_nav_data(int option); // read nav data
-void check_sync_byte(void);       // check for new msg
-unsigned short calculate_imu_crc(byte data[], unsigned int length); // check msg
-
-// Some global vars
-bool nav_ready = false; // check if the sync byte (0xFA) is detected
-byte in[90];            // array to save data send from the IMU
-
 // CAN IDs for the diffrent feilds
-String ti_id = "0x7FF";
-String gyro_id = "0x7FE";
-String rate_id = "0x7FD";
-String pos_id = "0x7FC";
-String vel_id = "0x7FB";
-String accel_id = "0x7FA";
+int ti_id = 0x1F4;
+int gyro_id = 0x1F5;
+int rate_id = 0x1F6;
+int pos_id = 0x1F7;
+int vel_id = 0x1F8;
+int accel_id = 0x1F9;
 
 // Custom struct for reading shit from
 class navData {
 public:
-  String r_ti;
-  String r_gyro;
-  String r_rate;
-  String r_pos;
-  String r_vel;
-  String r_acl;
-  String r_ins;
+  bool nav_ready = false; // check if the sync byte (0xFA) is detected
+  uint64_t r_ti;          // Time
+  int16_t r_gyro[3];      // Attitude
+  int16_t r_rate[3];      // Rate of Attitude
+  int32_t r_pos[2];       // Lat lon
+  int16_t r_vel[3];       // Velocity
+  int16_t r_acl[3];       // Acceleration
+  uint16_t r_ins;         // INS state
+
+  void init();
+  void read_data();
+  void check_sync_byte();
+
+private:
+  unsigned short calculate_imu_crc(byte data[], unsigned int length);
+  byte in[90]; // array to save data send from the IMU
 };
 
-// GPS time data (cant use var time as it conflicts with alot of shit)
+// GPS time in unix epoch
 union {
-  uint64_t f;
+  uint64_t v;
   byte b[8];
 } ti;
 
@@ -72,15 +72,15 @@ union {
 
 // Position data
 union {
-  double f;
+  double v;
   byte b[8];
 } lat;
 union {
-  double f;
+  double v;
   byte b[8];
 } lon;
 union {
-  double f;
+  double v;
   byte b[8];
 } alt;
 
@@ -124,8 +124,17 @@ union {
   byte b[2];
 } checksum;
 
-// Read the NAV bytes
-navData read_nav_data() {
+// Start UART and config
+void navData::init() {
+  // Start NAV UART
+  Serial8.begin(115200);
+
+  // Please just use the Vector Nav Control Center tool to generate the messages
+  // I fucking hate calculating these by hand so much don't torture yourself
+  Serial8.println("$VNWRG,75,1,40,01,11EA*614A");
+}
+
+void navData::read_data() {
   // Read the bytes into an array
   Serial8.readBytes(in, 87);
 
@@ -133,63 +142,67 @@ navData read_nav_data() {
   checksum.b[0] = in[86];
   checksum.b[1] = in[85];
 
+  // Get Attitude, Rates, Velocity & Accel
+  for (int i = 0; i < 4; i++) {
+    yaw.b[i] = in[11 + i];
+    pit.b[i] = in[15 + i];
+    rol.b[i] = in[19 + i];
+    W_x.b[i] = in[23 + i];
+    W_y.b[i] = in[27 + i];
+    W_z.b[i] = in[31 + i];
+    v_n.b[i] = in[59 + i];
+    v_e.b[i] = in[63 + i];
+    v_d.b[i] = in[67 + i];
+    a_x.b[i] = in[71 + i];
+    a_y.b[i] = in[75 + i];
+    a_z.b[i] = in[79 + i];
+  }
+
   // If the checksum is correct
   if (calculate_imu_crc(in, 85) == checksum.s) {
-    // Calc time
+    // Get Time & Position
     for (int i = 0; i < 8; i++) {
       ti.b[i] = in[3 + i];
-    }
-
-    // Calc Attitude and Rates
-    for (int i = 0; i < 4; i++) {
-      yaw.b[i] = in[11 + i];
-      pit.b[i] = in[15 + i];
-      rol.b[i] = in[19 + i];
-      W_x.b[i] = in[23 + i];
-      W_y.b[i] = in[27 + i];
-      W_z.b[i] = in[31 + i];
-    }
-
-    // Calc Position
-    for (int i = 0; i < 8; i++) {
       lat.b[i] = in[35 + i];
       lon.b[i] = in[43 + i];
       alt.b[i] = in[51 + i];
     }
 
-    // Calc Velocity & Acceleration
-    for (int i = 0; i < 4; i++) {
-      v_n.b[i] = in[59 + i];
-      v_e.b[i] = in[63 + i];
-      v_d.b[i] = in[67 + i];
-      a_x.b[i] = in[71 + i];
-      a_y.b[i] = in[75 + i];
-      a_z.b[i] = in[79 + i];
-    }
-
-    // "Calc" INS state
+    // Get INS state
     for (int i = 0; i < 2; i++) {
       ins.b[i] = in[83 + i];
     }
 
-    // Return values in readable format
-    return navData{
-        String(ti.f, 10),
-        String(yaw.f, 10) + "+" + String(pit.f, 10) + "+" + String(rol.f, 10),
-        String(W_x.f, 10) + "+" + String(W_y.f, 10) + "+" + String(W_z.f, 10),
-        String(lat.f, 10) + "+" + String(lon.f, 10) + "+" + String(alt.f, 10),
-        String(v_n.f, 10) + "+" + String(v_e.f, 10) + "+" + String(v_d.f, 10),
-        String(a_x.f, 10) + "+" + String(a_y.f, 10) + "+" + String(a_z.f, 10),
-        String(ins.f),
-    };
+    // TODO: Fix this, this is ugly and it makes me sad
+    r_ti = ti.v;
+
+    r_gyro[0] = int16_t(yaw.f * 100);
+    r_gyro[1] = int16_t(rol.f * 100);
+    r_gyro[2] = int16_t(pit.f * 100);
+
+    r_rate[0] = int16_t(W_x.f * 100);
+    r_rate[1] = int16_t(W_y.f * 100);
+    r_rate[2] = int16_t(W_z.f * 100);
+
+    r_pos[0] = int32_t(lat.v * 10000000);
+    r_pos[1] = int32_t(lon.v * 10000000);
+
+    r_vel[0] = int16_t(v_n.f * 100);
+    r_vel[1] = int16_t(v_e.f * 100);
+    r_vel[2] = int16_t(v_d.f * 100);
+
+    r_acl[0] = int16_t(a_x.f * 100);
+    r_acl[1] = int16_t(a_y.f * 100);
+    r_acl[2] = int16_t(a_z.f * 100);
+
+    r_ins = ins.f;
   }
 
-  // Return nothing if shits fucked
-  return navData{};
+  // Don't update if shits fucked
 }
 
 // Check for the sync byte (0xFA)
-void check_sync_byte(void) {
+void navData::check_sync_byte() {
   for (int i = 0; i < 6; i++) {
     Serial8.readBytes(in, 1);
     if (in[0] == 0xFA) {
@@ -200,7 +213,7 @@ void check_sync_byte(void) {
 }
 
 // Calculate the 16-bit CRC for the given ASCII or binary message.
-unsigned short calculate_imu_crc(byte data[], unsigned int length) {
+unsigned short navData::calculate_imu_crc(byte data[], unsigned int length) {
   unsigned int i;
   unsigned short crc = 0;
   for (i = 0; i < length; i++) {
