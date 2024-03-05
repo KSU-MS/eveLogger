@@ -117,7 +117,7 @@ void setup() {
   Serial.println("Setting up time");
   setSyncProvider(get_t4_time);
   // COMMENT OUT THIS LINE AND PUSH ONCE RTC HAS BEEN SET!!!!
-  // Teensy3Clock.set(1705100622); // set time (epoch) at powerup
+  // Teensy3Clock.set(1709674746); // set time (epoch) at powerup
   if (timeStatus() != timeSet) {
     Serial.println("RTC not set up, call Teensy3Clock.set(epoch)");
   } else {
@@ -148,8 +148,10 @@ void setup() {
     Serial.print("Successfully opened SD file: ");
     Serial.println(filename);
     digitalWrite(blueLED, HIGH);
+    digitalWrite(redLED, LOW);
   } else { // Print on fail
     Serial.println("Failed to open SD file");
+    digitalWrite(blueLED, LOW);
     digitalWrite(redLED, HIGH);
   }
 
@@ -158,8 +160,6 @@ void setup() {
   logger.flush();
 
   // Do te ting
-  digitalWrite(blueLED, LOW);
-  digitalWrite(redLED, LOW);
   Serial.println("Log start");
 }
 
@@ -219,10 +219,10 @@ void write_to_SD(CAN_message_t msg, uint8_t bus) {
       sec_epoch * 1000 + (millis() - global_ms_offset) % 1000;
 
   // Log to SD
-  logger.print(current_time + ',');
-  logger.print(bus + ',');
-  logger.print(msg.id, HEX + ',');
-  logger.print(msg.len + ',');
+  logger.print(String(current_time) + ",");
+  logger.print(String(bus) + ",");
+  logger.print(String(msg.id, HEX) + ",");
+  logger.print(String(msg.len) + ",");
   for (int i = 0; i < msg.len; i++) {
     if (msg.buf[i] < 16) {
       logger.print('0');
