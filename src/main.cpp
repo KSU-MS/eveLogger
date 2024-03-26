@@ -11,7 +11,7 @@
 // #define HAS_DIS // Enable/Disable Display code
 // #define HAS_GPS // Enable/Disable GPS data
 // #define HAS_NAV // Enable/Disable Vector Nav Boi
-// #define HAS_TEL // Enable/Disable XBee stuffs
+#define HAS_TEL // Enable/Disable XBee stuffs
 
 ///
 /// Global Variables
@@ -75,8 +75,12 @@ void setup() {
   delay(1000); // Prevents wacky files when turning the car on and off rapidly
 
   // LED test
+  pinMode(blueLED,OUTPUT);
+  pinMode(redLED,OUTPUT);
+  pinMode(LED_BUILTIN,OUTPUT);
   digitalWrite(blueLED, HIGH);
   digitalWrite(redLED, HIGH);
+  digitalWrite(LED_BUILTIN,HIGH);
 
   // Wait for Serial to start
   Serial.begin(115200);
