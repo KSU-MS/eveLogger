@@ -10,7 +10,7 @@
 // Some Global toggles for features
 // #define HAS_DIS // Enable/Disable Display code
 // #define HAS_GPS // Enable/Disable GPS data
-// #define HAS_NAV // Enable/Disable Vector Nav Boi
+#define HAS_NAV // Enable/Disable Vector Nav Boi
 #define HAS_TEL // Enable/Disable XBee stuffs
 
 ///
@@ -264,15 +264,54 @@ void nav_can_msg() {
     // Get NAV data
     nd.read_data();
 
+    // Pack time msg
+    CAN_message_t vectornav_time;
+    vectornav_time.id = ti_id;
+    vectornav_time.len = sizeof(nd.r_ti);
+    memcpy(vectornav_time.buf,&nd.r_ti,sizeof(nd.r_ti));
+    // pack gyro msg
+    CAN_message_t vectornav_gyro;
+    vectornav_gyro.id = gyro_id;
+    vectornav_gyro.len = sizeof(nd.r_gyro);
+    memcpy(vectornav_gyro.buf,&nd.r_gyro,sizeof(nd.r_gyro));
+    // pack rate of attitude
+    CAN_message_t vectornav_attitude;
+    vectornav_attitude.id= rate_id;
+    vectornav_attitude.len = sizeof(nd.r_rate);
+    memcpy(vectornav_attitude.buf,&nd.r_rate,sizeof(nd.r_rate));
+    // Pack lat&lon message
+    CAN_message_t vectornav_position;
+    vectornav_position.id = pos_id;
+    vectornav_position.len = sizeof(nd.r_pos);
+    memcpy(vectornav_position.buf,&nd.r_pos,sizeof(nd.r_pos));
+    // Pack velocity message
+    CAN_message_t vectornav_velocity;
+    vectornav_velocity.id = vel_id;
+    vectornav_velocity.len=sizeof(nd.r_vel);
+    memcpy(vectornav_velocity.buf,&nd.r_vel,sizeof(nd.r_vel));
+    // Pack accelerometer message
+    CAN_message_t vectornav_accelerometer;
+    vectornav_accelerometer.id = accel_id;
+    vectornav_accelerometer.len = sizeof(nd.r_acl);
+    memcpy(vectornav_accelerometer.buf, &nd.r_acl, sizeof(nd.r_acl));
+
+    CAN_message_t vnav_msgs[] = {vectornav_time,vectornav_gyro,vectornav_attitude,vectornav_position,vectornav_velocity,vectornav_accelerometer};
+    for (uint8_t i = 0; i < (sizeof(vnav_msgs)/sizeof(vnav_msgs[0])); i++)
+    {
+      tCAN.write(vnav_msgs[i]); // TODO make sure this is set to the right bus
+      write_to_SD(vnav_msgs[i],2);
+      #ifdef HAS_TEL
+      send_packet(vnav_msgs[i].id, vnav_msgs[i].buf);
+      #endif
+    }
+
     // TODO: Make it use proper ID and structure
     //  logger.print(String(current_time) + ",");
     //  logger.print(String(pos_id) + ",");
     //  logger.print(String(strlen(nd.r_pos.c_str())) + ",");
     //  logger.println(nd.r_pos);
 
-#ifdef HAS_TEL
-    send_packet(msg.id, msg.buf);
-#endif
+
 
 // Update the display with INS state
 // Look at page 139 of the docs if you want a better idea of wtf this means
