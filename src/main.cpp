@@ -237,7 +237,7 @@ void write_to_SD(CAN_message_t msg, uint8_t bus) {
   digitalToggle(13); // Flip LED state for signs of life
 
 #ifdef HAS_TEL
-  send_packet(msg.id, msg.buf);
+  send_packet(msg.id, msg.buf,msg.len);
 #endif
 }
 
@@ -301,7 +301,7 @@ void nav_can_msg() {
       tCAN.write(vnav_msgs[i]); // TODO make sure this is set to the right bus
       write_to_SD(vnav_msgs[i],2);
       #ifdef HAS_TEL
-      send_packet(vnav_msgs[i].id, vnav_msgs[i].buf);
+      send_packet(vnav_msgs[i].id, vnav_msgs[i].buf,vnav_msgs[i].len);
       #endif
     }
 
