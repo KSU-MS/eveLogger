@@ -11,8 +11,8 @@ void init_TEL() {
 void send_packet(uint32_t id, uint8_t *buf, size_t len) {
   // Start sending guy
   uint8_t id_[sizeof(id)];
-  memcpy(id_,&id,sizeof(id));
-  Serial3.write(id_,sizeof(id_));
+  memcpy(id_, &id, sizeof(id));
+  Serial3.write(id_, sizeof(id_));
   Serial3.write(',');
   for (unsigned int i = 0; i < len; i++) {
     Serial3.write(buf[i]);
@@ -20,6 +20,7 @@ void send_packet(uint32_t id, uint8_t *buf, size_t len) {
 
   // Break line
   Serial3.write('\n');
+  Serial3.write('\r');
 }
 
 #endif
