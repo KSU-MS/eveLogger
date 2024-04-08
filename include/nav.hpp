@@ -8,12 +8,12 @@
 #include <Arduino.h>
 
 // CAN IDs for the diffrent feilds
-int ti_id = 0x1F4;
-int gyro_id = 0x1F5;
-int rate_id = 0x1F6;
-int pos_id = 0x1F7;
-int vel_id = 0x1F8;
-int accel_id = 0x1F9;
+const int ti_id = 0x1F4;
+const int gyro_id = 0x1F5;
+const int rate_id = 0x1F6;
+const int pos_id = 0x1F7;
+const int vel_id = 0x1F8;
+const int accel_id = 0x1F9;
 
 // Custom struct for reading shit from
 class navData {
