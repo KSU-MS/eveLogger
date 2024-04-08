@@ -1,4 +1,5 @@
 // Libs
+#include "can.hpp"
 #include <Arduino.h>
 #include <FlexCAN_T4.h>
 #include <Metro.h>
@@ -56,7 +57,7 @@ void gps_can_msg();              // save global pos as CAN msg
 // NAV module
 #ifdef HAS_NAV
 #include "nav.hpp"
-navData nd;
+vNav nd;
 void nav_can_msg(); // save nav data as CAN msg
 #endif
 
@@ -75,12 +76,12 @@ void setup() {
   delay(1000); // Prevents wacky files when turning the car on and off rapidly
 
   // LED test
-  pinMode(blueLED,OUTPUT);
-  pinMode(redLED,OUTPUT);
-  pinMode(LED_BUILTIN,OUTPUT);
+  pinMode(blueLED, OUTPUT);
+  pinMode(redLED, OUTPUT);
+  pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(blueLED, HIGH);
   digitalWrite(redLED, HIGH);
-  digitalWrite(LED_BUILTIN,HIGH);
+  digitalWrite(LED_BUILTIN, HIGH);
 
   // Wait for Serial to start
   Serial.begin(115200);
@@ -237,81 +238,61 @@ void write_to_SD(CAN_message_t msg, uint8_t bus) {
   digitalToggle(13); // Flip LED state for signs of life
 
 #ifdef HAS_TEL
-  send_packet(msg.id, msg.buf,msg.len);
+  send_packet(msg.id, msg.buf, msg.len);
 #endif
 }
 
 #ifdef HAS_NAV
 void nav_can_msg() {
-  // Reset nav state
-  nd.nav_ready = false;
-
   // If we have more than 4 new bytes, see if its a new line
-  if (Serial8.available() > 4)
-    nd.check_sync_byte();
+  if (Serial8.available() > 4) {
+    if (nd.check_sync_byte()) {
+      // Get data
+      nd.read_data();
 
-  // If check_sync_byte() set is_nav_ready true, do shit with the data
-  if (nd.nav_ready) {
-    // Calculate Time
-    uint64_t sec_epoch = Teensy3Clock.get();
-    if (sec_epoch != last_sec_epoch) {
-      global_ms_offset = millis() % 1000;
-      last_sec_epoch = sec_epoch;
+      // Pack time msg
+      CAN_message_t vectornav_time;
+      vectornav_time.id = nav_time_id;
+      vectornav_time.len = sizeof(nd.time);
+      memcpy(vectornav_time.buf, &nd.time, sizeof(nd.time));
+      // Pack gyro msg
+      CAN_message_t vectornav_attitude;
+      vectornav_attitude.id = nav_attitude_id;
+      vectornav_attitude.len = sizeof(nd.attitude);
+      memcpy(vectornav_attitude.buf, &nd.attitude, sizeof(nd.attitude));
+      // Pack rate of attitude msg
+      CAN_message_t vectornav_rate;
+      vectornav_rate.id = nav_rate_id;
+      vectornav_rate.len = sizeof(nd.ang_rate);
+      memcpy(vectornav_rate.buf, &nd.ang_rate, sizeof(nd.ang_rate));
+      // Pack lat & lon msg
+      CAN_message_t vectornav_position;
+      vectornav_position.id = nav_pos_id;
+      vectornav_position.len = sizeof(nd.lat_lon);
+      memcpy(vectornav_position.buf, &nd.lat_lon, sizeof(nd.lat_lon));
+      // Pack velocity msg
+      CAN_message_t vectornav_velocity;
+      vectornav_velocity.id = nav_velocity_id;
+      vectornav_velocity.len = sizeof(nd.velocity);
+      memcpy(vectornav_velocity.buf, &nd.velocity, sizeof(nd.velocity));
+      // Pack accelerometer msg
+      CAN_message_t vectornav_accelerometer;
+      vectornav_accelerometer.id = nav_accelerometer_id;
+      vectornav_accelerometer.len = sizeof(nd.accel);
+      memcpy(vectornav_accelerometer.buf, &nd.accel, sizeof(nd.accel));
+
+      CAN_message_t vnav_msgs[] = {vectornav_time,     vectornav_attitude,
+                                   vectornav_rate,     vectornav_position,
+                                   vectornav_velocity, vectornav_accelerometer};
+
+      for (uint8_t i = 0; i < (sizeof(vnav_msgs) / sizeof(vnav_msgs[0])); i++) {
+        tCAN.write(vnav_msgs[i]); // TODO make sure this is set to the right bus
+        write_to_SD(vnav_msgs[i], 2);
+#ifdef HAS_TEL
+        send_packet(vnav_msgs[i].id, vnav_msgs[i].buf, vnav_msgs[i].len);
+#endif
+      }
     }
-    uint64_t current_time =
-        sec_epoch * 1000 + (millis() - global_ms_offset) % 1000;
-
-    // Get NAV data
-    nd.read_data();
-
-    // Pack time msg
-    CAN_message_t vectornav_time;
-    vectornav_time.id = ti_id;
-    vectornav_time.len = sizeof(nd.r_ti);
-    memcpy(vectornav_time.buf,&nd.r_ti,sizeof(nd.r_ti));
-    // pack gyro msg
-    CAN_message_t vectornav_gyro;
-    vectornav_gyro.id = gyro_id;
-    vectornav_gyro.len = sizeof(nd.r_gyro);
-    memcpy(vectornav_gyro.buf,&nd.r_gyro,sizeof(nd.r_gyro));
-    // pack rate of attitude
-    CAN_message_t vectornav_attitude;
-    vectornav_attitude.id= rate_id;
-    vectornav_attitude.len = sizeof(nd.r_rate);
-    memcpy(vectornav_attitude.buf,&nd.r_rate,sizeof(nd.r_rate));
-    // Pack lat&lon message
-    CAN_message_t vectornav_position;
-    vectornav_position.id = pos_id;
-    vectornav_position.len = sizeof(nd.r_pos);
-    memcpy(vectornav_position.buf,&nd.r_pos,sizeof(nd.r_pos));
-    // Pack velocity message
-    CAN_message_t vectornav_velocity;
-    vectornav_velocity.id = vel_id;
-    vectornav_velocity.len=sizeof(nd.r_vel);
-    memcpy(vectornav_velocity.buf,&nd.r_vel,sizeof(nd.r_vel));
-    // Pack accelerometer message
-    CAN_message_t vectornav_accelerometer;
-    vectornav_accelerometer.id = accel_id;
-    vectornav_accelerometer.len = sizeof(nd.r_acl);
-    memcpy(vectornav_accelerometer.buf, &nd.r_acl, sizeof(nd.r_acl));
-
-    CAN_message_t vnav_msgs[] = {vectornav_time,vectornav_gyro,vectornav_attitude,vectornav_position,vectornav_velocity,vectornav_accelerometer};
-    for (uint8_t i = 0; i < (sizeof(vnav_msgs)/sizeof(vnav_msgs[0])); i++)
-    {
-      tCAN.write(vnav_msgs[i]); // TODO make sure this is set to the right bus
-      write_to_SD(vnav_msgs[i],2);
-      #ifdef HAS_TEL
-      send_packet(vnav_msgs[i].id, vnav_msgs[i].buf,vnav_msgs[i].len);
-      #endif
-    }
-
-    // TODO: Make it use proper ID and structure
-    //  logger.print(String(current_time) + ",");
-    //  logger.print(String(pos_id) + ",");
-    //  logger.print(String(strlen(nd.r_pos.c_str())) + ",");
-    //  logger.println(nd.r_pos);
-
-
 
 // Update the display with INS state
 // Look at page 139 of the docs if you want a better idea of wtf this means
