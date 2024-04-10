@@ -10,128 +10,110 @@
 // Custom struct for reading shit from
 class vNav {
 private:
-  byte in[90];
+  unsigned short calc_imu_crc(byte data[], uint16_t length); // check msg
+  HardwareSerial &serial_port;                               // Target port
+  byte in[90];                                               // Buffer to hold
+
+  // Raw byte -> data guys
+  union {
+    uint64_t v;
+    byte b[8];
+  } raw_time;
+  union {
+    uint16_t v;
+    byte b[2];
+  } raw_INS;
+  union {
+    struct {
+      float yaw;
+      float pitch;
+      float roll;
+    };
+    byte b[12];
+  } raw_attitude;
+  union {
+    struct {
+      float x;
+      float y;
+      float z;
+    };
+    byte b[12];
+  } raw_ang_rate;
+  union {
+    struct {
+      float north;
+      float east;
+      float down;
+    };
+    byte b[12];
+  } raw_velocity;
+  union {
+    struct {
+      float x;
+      float y;
+      float z;
+    };
+    byte b[12];
+  } raw_accel;
+  union {
+    struct {
+      double latitude;
+      double longitude;
+      double altitude;
+    };
+    byte b[24];
+  } raw_position;
+  union {
+    uint16_t s;
+    byte b[2];
+  } checksum;
 
 public:
-  // Holders for nav data
+  // Can ready values
   uint64_t time;
+  uint16_t ins;
   int32_t lat_lon[2];
-  uint16_t ins_state;
-  int16_t ang_rate[3];
   int16_t attitude[3];
+  int16_t ang_rate[3];
   int16_t velocity[3];
   int16_t accel[3];
 
   // Some functions or something idk
+  vNav(HardwareSerial &target_port) : serial_port(target_port){};
   void init();
   void read_data();           // read nav data
   bool check_sync_byte(void); // check for new msg
-  unsigned short calc_imu_crc(byte data[], unsigned int length); // check msg
 };
-
-// GPS time data
-union {
-  uint64_t v;
-  byte b[8];
-} ti;
-
-// Attitude data (Gyro data stuffs)
-union {
-  float f;
-  byte b[4];
-} yaw;
-union {
-  float f;
-  byte b[4];
-} pit;
-union {
-  float f;
-  byte b[4];
-} rol;
-
-// Angular rates
-union {
-  float f;
-  byte b[4];
-} W_x;
-union {
-  float f;
-  byte b[4];
-} W_y;
-union {
-  float f;
-  byte b[4];
-} W_z;
-
-// Position data
-union {
-  double v;
-  byte b[8];
-} lat;
-union {
-  double v;
-  byte b[8];
-} lon;
-union {
-  double v;
-  byte b[8];
-} alt;
-
-// Velocity data
-union {
-  float f;
-  byte b[4];
-} v_n;
-union {
-  float f;
-  byte b[4];
-} v_e;
-union {
-  float f;
-  byte b[4];
-} v_d;
-
-// Acceleration data
-union {
-  float f;
-  byte b[4];
-} a_x;
-union {
-  float f;
-  byte b[4];
-} a_y;
-union {
-  float f;
-  byte b[4];
-} a_z;
-
-// INS status data
-union {
-  uint16_t f;
-  byte b[2];
-} ins;
-
-// Checksum
-union {
-  unsigned short s;
-  byte b[2];
-} checksum;
 
 void vNav::init() {
   // Wait for NAV UART to start
   Serial.println("Init NAV");
-  Serial8.begin(115200);
+  serial_port.begin(115200);
 
   // Please just use the Vector Nav Control Center tool to generate the messages
   // I fucking hate calculating these by hand so much don't torture yourself
-  Serial8.println("$VNWRG,75,1,40,01,11EA*614A");
+  // also if you change the feilds it fucks with the parser to be careful
+
+  // Baud rate
+  serial_port.println("$VNWRG,5,115200,1*565B");
+
+  // Refrence frame offsets
+  // serial_port.println("$VNWRG,26,+0.000000,+0.000000,-1.000000,+0.000000,+1.000000,"
+  //                 "+0.000000,+1.000000,+0.000000,+0.000000*9D8A");
+
+  // GPS antenna offset
+  serial_port.println("$VNWRG,57,0.79756,0.127,0.4953*592C");
+
+  // This sets what feilds you want and at what rate
+  serial_port.println("$VNWRG,75,1,40,01,11EA*614A");
+
   Serial.println("NAV set");
 }
 
 // Read the NAV bytes
 void vNav::read_data() {
   // Read the bytes into an array
-  Serial8.readBytes(in, 87);
+  serial_port.readBytes(in, 87);
 
   // Grab the checksum
   checksum.b[0] = in[86];
@@ -139,70 +121,62 @@ void vNav::read_data() {
 
   // If the checksum is correct
   if (calc_imu_crc(in, 85) == checksum.s) {
-    // Get Time & Position
+    // Get Time
     for (int i = 0; i < 8; i++) {
-      ti.b[i] = in[3 + i];
-      lat.b[i] = in[35 + i];
-      lon.b[i] = in[43 + i];
-      alt.b[i] = in[51 + i];
+      raw_time.b[i] = in[3 + i];
     }
-    time = ti.v;
-    lat_lon[0] = int32_t(lat.v * 10000000);
-    lat_lon[1] = int32_t(lon.v * 10000000);
-
-    // Get Attitude, Rates, Velocity & Acceleration
-    for (int i = 0; i < 4; i++) {
-      yaw.b[i] = in[11 + i];
-      pit.b[i] = in[15 + i];
-      rol.b[i] = in[19 + i];
-      W_x.b[i] = in[23 + i];
-      W_y.b[i] = in[27 + i];
-      W_z.b[i] = in[31 + i];
-      v_n.b[i] = in[59 + i];
-      v_e.b[i] = in[63 + i];
-      v_d.b[i] = in[67 + i];
-      a_x.b[i] = in[71 + i];
-      a_y.b[i] = in[75 + i];
-      a_z.b[i] = in[79 + i];
-    }
-    attitude[0] = int16_t(yaw.f * 100);
-    attitude[1] = int16_t(rol.f * 100);
-    attitude[2] = int16_t(pit.f * 100);
-    ang_rate[0] = int16_t(W_x.f * 100);
-    ang_rate[1] = int16_t(W_y.f * 100);
-    ang_rate[2] = int16_t(W_z.f * 100);
-    velocity[0] = int16_t(v_n.f * 100);
-    velocity[1] = int16_t(v_e.f * 100);
-    velocity[2] = int16_t(v_d.f * 100);
-    accel[0] = int16_t(a_x.f * 100);
-    accel[1] = int16_t(a_y.f * 100);
-    accel[2] = int16_t(a_z.f * 100);
+    time = raw_time.v;
 
     // Get INS state
     for (int i = 0; i < 2; i++) {
-      ins.b[i] = in[83 + i];
+      raw_INS.b[i] = in[83 + i];
     }
-    ins_state = ins.f;
+    ins = raw_INS.v;
+
+    // Get position
+    for (int i = 0; i < 24; i++) {
+      raw_position.b[i] = in[35 + i];
+    }
+    lat_lon[0] = int32_t(raw_position.latitude * 10000000);
+    lat_lon[1] = int32_t(raw_position.longitude * 10000000);
+
+    // Get attitude, rate of attitude, velocity & acceleration
+    for (int i = 0; i < 12; i++) {
+      raw_attitude.b[i] = in[11 + i];
+      raw_ang_rate.b[i] = in[23 + i];
+      raw_velocity.b[i] = in[59 + i];
+      raw_accel.b[i] = in[71 + i];
+    }
+    attitude[0] = int16_t(raw_attitude.yaw * 100);
+    attitude[1] = int16_t(raw_attitude.roll * 100);
+    attitude[2] = int16_t(raw_attitude.pitch * 100);
+    ang_rate[0] = int16_t(raw_ang_rate.x * 100);
+    ang_rate[1] = int16_t(raw_ang_rate.y * 100);
+    ang_rate[2] = int16_t(raw_ang_rate.z * 100);
+    velocity[0] = int16_t(raw_velocity.north * 100);
+    velocity[1] = int16_t(raw_velocity.east * 100);
+    velocity[2] = int16_t(raw_velocity.down * 100);
+    accel[0] = int16_t(raw_accel.x * 100);
+    accel[1] = int16_t(raw_accel.y * 100);
+    accel[2] = int16_t(raw_accel.z * 100);
   }
 }
 
 // Check for the sync byte (0xFA)
 bool vNav::check_sync_byte(void) {
   for (int i = 0; i < 6; i++) {
-    Serial8.readBytes(in, 1);
+    serial_port.readBytes(in, 1);
     if (in[0] == 0xFA) {
       return true;
-      break;
     }
   }
   return false;
 }
 
 // Calculate the 16-bit CRC for the given ASCII or binary message.
-unsigned short vNav::calc_imu_crc(byte data[], unsigned int length) {
-  unsigned int i;
-  unsigned short crc = 0;
-  for (i = 0; i < length; i++) {
+uint16_t vNav::calc_imu_crc(byte data[], uint16_t length) {
+  uint16_t crc = 0;
+  for (uint16_t i = 0; i < length; i++) {
     crc = (byte)(crc >> 8) | (crc << 8); // Rotate crc left 8 bits
     crc ^= data[i];                      // XOR crc with data[i]
     crc ^= (byte)(crc & 0xff) >> 4;      // XOR crc with lower 4 bits of crc

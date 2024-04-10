@@ -34,12 +34,6 @@ Metro timer_flush = Metro(50);     // Sending time CAN msg
 File logger;      // For saving to disk
 String printname; // global thing for the filename
 
-// CAN Variables
-FlexCAN_T4<CAN1, RX_SIZE_256, TX_SIZE_16> fCAN;
-FlexCAN_T4<CAN2, RX_SIZE_256, TX_SIZE_16> sCAN;
-FlexCAN_T4<CAN3, RX_SIZE_256, TX_SIZE_16> tCAN;
-static CAN_message_t msg;
-
 // Function defs
 void read_can_message();                            // parse incoming msg
 void write_to_SD(CAN_message_t msg, uint8_t bus);   // write can msg to disk
@@ -57,7 +51,7 @@ void gps_can_msg();              // save global pos as CAN msg
 // NAV module
 #ifdef HAS_NAV
 #include "nav.hpp"
-vNav nd;
+vNav nd(Serial8);
 void nav_can_msg(); // save nav data as CAN msg
 #endif
 
@@ -75,7 +69,7 @@ Metro displayUp = Metro(1000); // Timer for updating display info
 void setup() {
   delay(1000); // Prevents wacky files when turning the car on and off rapidly
 
-  // LED test
+  // LED setup
   pinMode(blueLED, OUTPUT);
   pinMode(redLED, OUTPUT);
   pinMode(LED_BUILTIN, OUTPUT);
@@ -96,6 +90,25 @@ void setup() {
   Serial.println("Init NAV");
   nd.init();
   Serial.println("NAV set");
+
+  // Setup can messages (defs are in can.hpp)
+  vectornav_time.id = nav_time_id;
+  vectornav_time.len = sizeof(nd.time);
+
+  vectornav_attitude.id = nav_attitude_id;
+  vectornav_attitude.len = sizeof(nd.attitude);
+
+  vectornav_gyro.id = nav_gyro_id;
+  vectornav_gyro.len = sizeof(nd.ang_rate);
+
+  vectornav_position.id = nav_position_id;
+  vectornav_position.len = sizeof(nd.lat_lon);
+
+  vectornav_velocity.id = nav_velocity_id;
+  vectornav_velocity.len = sizeof(nd.velocity);
+
+  vectornav_accel.id = nav_accel_id;
+  vectornav_accel.len = sizeof(nd.accel);
 #endif
 
 #ifdef HAS_TEL
@@ -249,44 +262,16 @@ void nav_can_msg() {
     if (nd.check_sync_byte()) {
       // Get data
       nd.read_data();
-
-      // Pack time msg
-      CAN_message_t vectornav_time;
-      vectornav_time.id = nav_time_id;
-      vectornav_time.len = sizeof(nd.time);
       memcpy(vectornav_time.buf, &nd.time, sizeof(nd.time));
-      // Pack gyro msg
-      CAN_message_t vectornav_attitude;
-      vectornav_attitude.id = nav_attitude_id;
-      vectornav_attitude.len = sizeof(nd.attitude);
       memcpy(vectornav_attitude.buf, &nd.attitude, sizeof(nd.attitude));
-      // Pack rate of attitude msg
-      CAN_message_t vectornav_rate;
-      vectornav_rate.id = nav_rate_id;
-      vectornav_rate.len = sizeof(nd.ang_rate);
-      memcpy(vectornav_rate.buf, &nd.ang_rate, sizeof(nd.ang_rate));
-      // Pack lat & lon msg
-      CAN_message_t vectornav_position;
-      vectornav_position.id = nav_pos_id;
-      vectornav_position.len = sizeof(nd.lat_lon);
+      memcpy(vectornav_gyro.buf, &nd.ang_rate, sizeof(nd.ang_rate));
       memcpy(vectornav_position.buf, &nd.lat_lon, sizeof(nd.lat_lon));
-      // Pack velocity msg
-      CAN_message_t vectornav_velocity;
-      vectornav_velocity.id = nav_velocity_id;
-      vectornav_velocity.len = sizeof(nd.velocity);
       memcpy(vectornav_velocity.buf, &nd.velocity, sizeof(nd.velocity));
-      // Pack accelerometer msg
-      CAN_message_t vectornav_accelerometer;
-      vectornav_accelerometer.id = nav_accelerometer_id;
-      vectornav_accelerometer.len = sizeof(nd.accel);
-      memcpy(vectornav_accelerometer.buf, &nd.accel, sizeof(nd.accel));
+      memcpy(vectornav_accel.buf, &nd.accel, sizeof(nd.accel));
 
-      CAN_message_t vnav_msgs[] = {vectornav_time,     vectornav_attitude,
-                                   vectornav_rate,     vectornav_position,
-                                   vectornav_velocity, vectornav_accelerometer};
-
+      // Yeet data
       for (uint8_t i = 0; i < (sizeof(vnav_msgs) / sizeof(vnav_msgs[0])); i++) {
-        tCAN.write(vnav_msgs[i]); // TODO make sure this is set to the right bus
+        tCAN.write(vnav_msgs[i]);
         write_to_SD(vnav_msgs[i], 2);
 #ifdef HAS_TEL
         send_packet(vnav_msgs[i].id, vnav_msgs[i].buf, vnav_msgs[i].len);
@@ -310,61 +295,6 @@ void nav_can_msg() {
 #endif
   }
 }
-#endif
-
-#ifdef HAS_GPS
-void serialEvent2() {
-  while (Serial8.available() && ready_serial8 == false) {
-    char nextChar = char(Serial8.read()); // Cast UART data to char
-
-    input_serial8 += nextChar; // Append nextChar to string
-
-    // Break the while statement once the line ends
-    if (nextChar == '\n') {
-      ready_serial8 = true;
-    }
-  }
-}
-
-void gps_can_msg() {
-  if (ready_serial8) {
-#ifdef HAS_DIS
-    // Update display
-    if (displayUp.check()) {
-      display.clearDisplay();
-      draw_thing(printname, "top");
-      draw_thing(parse_gga(input_serial8), "bot");
-    }
-#endif
-
-    // Get GPS data
-    String global_pos = (parse_rmc(input_serial8));
-
-    // Calculate Time
-    uint64_t sec_epoch = Teensy3Clock.get();
-    if (sec_epoch != last_sec_epoch) {
-      global_ms_offset = millis() % 1000;
-      last_sec_epoch = sec_epoch;
-    }
-    uint64_t current_time =
-        sec_epoch * 1000 + (millis() - global_ms_offset) % 1000;
-
-    // Log to SD
-    logger.print(String(current_time) + ",");
-    logger.print(String(gps_id) + ",");
-    logger.print(String(strlen(global_pos.c_str())) + ",");
-    logger.println(global_pos);
-
-#ifdef HAS_TEL
-    send_packet(msg.id, msg.buf);
-#endif
-
-    // Reset vars
-    input_serial8 = "";
-    ready_serial8 = false;
-  }
-}
-
 #endif
 
 // A function called once for fat32 file date stuff
