@@ -88,24 +88,27 @@ public:
 void vNav::init() {
   // Wait for NAV UART to start
   Serial.println("Init NAV");
-  serial_port.begin(115200);
+  serial_port.begin(230400);
 
   // Please just use the Vector Nav Control Center tool to generate the messages
   // I fucking hate calculating these by hand so much don't torture yourself
   // also if you change the feilds it fucks with the parser to be careful
 
   // Baud rate
-  serial_port.println("$VNWRG,5,115200,1*565B");
+  serial_port.println("$VNWRG,5,230400,1*7049");
 
   // Refrence frame offsets
-  // serial_port.println("$VNWRG,26,+0.000000,+0.000000,-1.000000,+0.000000,+1.000000,"
-  //                 "+0.000000,+1.000000,+0.000000,+0.000000*9D8A");
+  serial_port.println("$VNWRG,26,+0.000000,+0.000000,-1.000000,+0.000000,-1."
+                      "000000,+0.000000,-1.000000,+0.000000,+0.000000*20A7");
 
   // GPS antenna offset
-  serial_port.println("$VNWRG,57,0.79756,0.127,0.4953*592C");
+  serial_port.println("$VNWRG,57,+0.798,-0.127,-0.495*5546");
 
-  // This sets what feilds you want and at what rate
-  serial_port.println("$VNWRG,75,1,40,01,11EA*614A");
+  // This sets what feilds you want and at what rate for the first bin output
+  serial_port.println("$VNWRG,75,1,40,01,1042*23E6");
+
+  // And this is for the secondary bin output
+  serial_port.println("$VNWRG,76,1,2,01,01A8*0488");
 
   Serial.println("NAV set");
 }
