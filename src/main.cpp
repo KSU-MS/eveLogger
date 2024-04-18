@@ -262,12 +262,12 @@ void nav_can_msg() {
     if (nd.check_sync_byte()) {
       // Get data
       nd.read_data();
-      memcpy(vectornav_time.buf, &nd.time, sizeof(nd.time));
-      memcpy(vectornav_attitude.buf, &nd.attitude, sizeof(nd.attitude));
-      memcpy(vectornav_gyro.buf, &nd.ang_rate, sizeof(nd.ang_rate));
-      memcpy(vectornav_position.buf, &nd.lat_lon, sizeof(nd.lat_lon));
-      memcpy(vectornav_velocity.buf, &nd.velocity, sizeof(nd.velocity));
-      memcpy(vectornav_accel.buf, &nd.accel, sizeof(nd.accel));
+      memcpy(vectornav_time.buf, &nd.time, vectornav_time.len);
+      memcpy(vectornav_attitude.buf, &nd.attitude, vectornav_attitude.len);
+      memcpy(vectornav_gyro.buf, &nd.ang_rate, vectornav_gyro.len);
+      memcpy(vectornav_position.buf, &nd.lat_lon, vectornav_position.len);
+      memcpy(vectornav_velocity.buf, &nd.velocity, vectornav_velocity.len);
+      memcpy(vectornav_accel.buf, &nd.accel, vectornav_accel.len);
 
       // Yeet data
       for (uint8_t i = 0; i < (sizeof(vnav_msgs) / sizeof(vnav_msgs[0])); i++) {

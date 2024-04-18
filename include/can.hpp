@@ -18,12 +18,8 @@ const int nav_position_id = 0x1F7;
 const int nav_velocity_id = 0x1F8;
 const int nav_accel_id = 0x1F9;
 
-CAN_message_t vectornav_time;
-CAN_message_t vectornav_attitude;
-CAN_message_t vectornav_gyro;
-CAN_message_t vectornav_position;
-CAN_message_t vectornav_velocity;
-CAN_message_t vectornav_accel;
+CAN_message_t vectornav_time, vectornav_attitude, vectornav_gyro,
+    vectornav_position, vectornav_velocity, vectornav_accel;
 
 CAN_message_t vnav_msgs[] = {vectornav_time,     vectornav_attitude,
                              vectornav_gyro,     vectornav_position,
