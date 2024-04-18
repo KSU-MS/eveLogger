@@ -115,53 +115,71 @@ void vNav::init() {
 
 // Read the NAV bytes
 void vNav::read_data() {
-  // Read the bytes into an array
-  serial_port.readBytes(in, 87);
+  // Read the next 3 bytes to get what bin group it is
+  serial_port.readBytes(in, 3);
 
-  // Grab the checksum
-  checksum.b[0] = in[86];
-  checksum.b[1] = in[85];
+  // Check if its the 20hz bin
+  if (in[1] == 0x42 && in[2] == 0x10) {
+    // Read the bytes into a buffer
+    serial_port.readBytes(&in[3], 36);
 
-  // If the checksum is correct
-  if (calc_imu_crc(in, 85) == checksum.s) {
-    // Get Time
-    for (int i = 0; i < 8; i++) {
-      raw_time.b[i] = in[3 + i];
+    // Grab the checksum
+    checksum.b[0] = in[38];
+    checksum.b[1] = in[37];
+
+    // Make sure the checksum is valid
+    if (calc_imu_crc(in, 37) == checksum.s) {
+      // Get Time
+      for (int i = 0; i < 8; i++) {
+        raw_time.b[i] = in[3 + i];
+      }
+      time = raw_time.v;
+
+      // Get position
+      for (int i = 0; i < 24; i++) {
+        raw_position.b[i] = in[11 + i];
+      }
+      lat_lon[0] = int32_t(raw_position.latitude * 10000000);
+      lat_lon[1] = int32_t(raw_position.longitude * 10000000);
+
+      // Get INS state
+      for (int i = 0; i < 2; i++) {
+        raw_INS.b[i] = in[35 + i];
+      }
+      ins = raw_INS.v;
     }
-    time = raw_time.v;
+  }
 
-    // Get INS state
-    for (int i = 0; i < 2; i++) {
-      raw_INS.b[i] = in[83 + i];
-    }
-    ins = raw_INS.v;
+  // Check if its the 400Hz bin
+  else if (in[1] == 0xA8 && in[2] == 0x01) {
+    // Read the bytes into a buffer
+    serial_port.readBytes(&in[3], 50);
 
-    // Get position
-    for (int i = 0; i < 24; i++) {
-      raw_position.b[i] = in[35 + i];
-    }
-    lat_lon[0] = int32_t(raw_position.latitude * 10000000);
-    lat_lon[1] = int32_t(raw_position.longitude * 10000000);
+    // Grab the checksum
+    checksum.b[0] = in[52];
+    checksum.b[1] = in[51];
 
-    // Get attitude, rate of attitude, velocity & acceleration
-    for (int i = 0; i < 12; i++) {
-      raw_attitude.b[i] = in[11 + i];
-      raw_ang_rate.b[i] = in[23 + i];
-      raw_velocity.b[i] = in[59 + i];
-      raw_accel.b[i] = in[71 + i];
+    if (calc_imu_crc(in, 51) == checksum.s) {
+      // Get attitude, rate of attitude, velocity & acceleration
+      for (int i = 0; i < 12; i++) {
+        raw_attitude.b[i] = in[3 + i];
+        raw_ang_rate.b[i] = in[15 + i];
+        raw_velocity.b[i] = in[27 + i];
+        raw_accel.b[i] = in[39 + i];
+      }
+      attitude[0] = int16_t(raw_attitude.yaw * 100);
+      attitude[1] = int16_t(raw_attitude.roll * 100);
+      attitude[2] = int16_t(raw_attitude.pitch * 100);
+      ang_rate[0] = int16_t(raw_ang_rate.x * 100);
+      ang_rate[1] = int16_t(raw_ang_rate.y * 100);
+      ang_rate[2] = int16_t(raw_ang_rate.z * 100);
+      velocity[0] = int16_t(raw_velocity.north * 100);
+      velocity[1] = int16_t(raw_velocity.east * 100);
+      velocity[2] = int16_t(raw_velocity.down * 100);
+      accel[0] = int16_t(raw_accel.x * 100);
+      accel[1] = int16_t(raw_accel.y * 100);
+      accel[2] = int16_t(raw_accel.z * 100);
     }
-    attitude[0] = int16_t(raw_attitude.yaw * 100);
-    attitude[1] = int16_t(raw_attitude.roll * 100);
-    attitude[2] = int16_t(raw_attitude.pitch * 100);
-    ang_rate[0] = int16_t(raw_ang_rate.x * 100);
-    ang_rate[1] = int16_t(raw_ang_rate.y * 100);
-    ang_rate[2] = int16_t(raw_ang_rate.z * 100);
-    velocity[0] = int16_t(raw_velocity.north * 100);
-    velocity[1] = int16_t(raw_velocity.east * 100);
-    velocity[2] = int16_t(raw_velocity.down * 100);
-    accel[0] = int16_t(raw_accel.x * 100);
-    accel[1] = int16_t(raw_accel.y * 100);
-    accel[2] = int16_t(raw_accel.z * 100);
   }
 }
 
