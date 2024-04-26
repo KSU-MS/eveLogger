@@ -238,4 +238,59 @@ float degree_to_decimal(float num, byte sign) {
     return -(degree + (mins + decpart) / 60);
   }
 }
+
+// NOTE: These two functions probabaly need to be in the main.cpp, but hopefully
+// we never have to use the adafruit GPS again sooo....
+void gps_can_msg() {
+  if (ready_serial8) {
+#ifdef HAS_DIS
+    // Update display
+    if (displayUp.check()) {
+      display.clearDisplay();
+      draw_thing(printname, "top");
+      draw_thing(parse_gga(input_serial8), "bot");
+    }
+#endif
+
+    // Get GPS data
+    String global_pos = (parse_rmc(input_serial8));
+
+    // Calculate Time
+    uint64_t sec_epoch = Teensy3Clock.get();
+    if (sec_epoch != last_sec_epoch) {
+      global_ms_offset = millis() % 1000;
+      last_sec_epoch = sec_epoch;
+    }
+    uint64_t current_time =
+        sec_epoch * 1000 + (millis() - global_ms_offset) % 1000;
+
+    // Log to SD
+    logger.print(String(current_time) + ",");
+    logger.print(String(gps_id) + ",");
+    logger.print(String(strlen(global_pos.c_str())) + ",");
+    logger.println(global_pos);
+
+#ifdef HAS_TEL
+    send_packet(msg.id, msg.buf);
+#endif
+
+    // Reset vars
+    input_serial8 = "";
+    ready_serial8 = false;
+  }
+}
+
+void serialEvent2() {
+  while (Serial8.available() && ready_serial8 == false) {
+    char nextChar = char(Serial8.read()); // Cast UART data to char
+
+    input_serial8 += nextChar; // Append nextChar to string
+
+    // Break the while statement once the line ends
+    if (nextChar == '\n') {
+      ready_serial8 = true;
+    }
+  }
+}
+
 #endif
