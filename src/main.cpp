@@ -12,7 +12,7 @@
 // #define HAS_DIS // Enable/Disable Display code
 // #define HAS_GPS // Enable/Disable GPS data
 #define HAS_NAV // Enable/Disable Vector Nav Boi
-#define HAS_TEL // Enable/Disable XBee stuffs
+// #define HAS_TEL // Enable/Disable XBee stuffs
 
 ///
 /// Global Variables
@@ -271,8 +271,8 @@ void nav_can_msg() {
 
       // Yeet data
       for (uint8_t i = 0; i < (sizeof(vnav_msgs) / sizeof(vnav_msgs[0])); i++) {
-        tCAN.write(vnav_msgs[i]);
-        write_to_SD(vnav_msgs[i], 2);
+        tCAN.write(*vnav_msgs[i]);
+        write_to_SD(*vnav_msgs[i], 2);
 #ifdef HAS_TEL
         send_packet(vnav_msgs[i].id, vnav_msgs[i].buf, vnav_msgs[i].len);
 #endif
