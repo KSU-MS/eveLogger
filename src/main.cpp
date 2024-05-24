@@ -174,7 +174,7 @@ void setup() {
   }
 
   // Print CSV heading to the logfile
-  logger.println("bus,time,msg.id,msg.len,data");
+  logger.println("time,msg.id,msg.len,data,bus");
   logger.flush();
 
   // Do te ting
@@ -238,7 +238,6 @@ void write_to_SD(CAN_message_t msg, uint8_t bus) {
 
   // Log to SD
   logger.print(String(current_time) + ",");
-  logger.print(String(bus) + ",");
   logger.print(String(msg.id, HEX) + ",");
   logger.print(String(msg.len) + ",");
   for (int i = 0; i < msg.len; i++) {
@@ -247,6 +246,7 @@ void write_to_SD(CAN_message_t msg, uint8_t bus) {
     }
     logger.print(msg.buf[i], HEX);
   }
+  logger.print("," + String(bus));
   logger.println();
   digitalToggle(13); // Flip LED state for signs of life
 
