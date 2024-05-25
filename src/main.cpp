@@ -130,7 +130,7 @@ void setup() {
   sCAN.begin();
   sCAN.setBaudRate(500000);
   tCAN.begin();
-  tCAN.setBaudRate(500000);
+  tCAN.setBaudRate(1000000);
 
   Serial.println("Setting up time");
   setSyncProvider(get_t4_time);
