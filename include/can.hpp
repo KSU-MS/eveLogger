@@ -21,7 +21,7 @@ const int nav_accel_id = 0x1F9;
 CAN_message_t vectornav_time, vectornav_attitude, vectornav_gyro,
     vectornav_position, vectornav_velocity, vectornav_accel;
 
-CAN_message_t vnav_msgs[] = {vectornav_time,     vectornav_attitude,
-                             vectornav_gyro,     vectornav_position,
-                             vectornav_velocity, vectornav_accel};
+CAN_message_t *vnav_msgs[] = {&vectornav_time,     &vectornav_attitude,
+                              &vectornav_gyro,     &vectornav_position,
+                              &vectornav_velocity, &vectornav_accel};
 #endif // can

@@ -12,7 +12,7 @@
 // #define HAS_DIS // Enable/Disable Display code
 // #define HAS_GPS // Enable/Disable GPS data
 #define HAS_NAV // Enable/Disable Vector Nav Boi
-#define HAS_TEL // Enable/Disable XBee stuffs
+// #define HAS_TEL // Enable/Disable XBee stuffs
 
 ///
 /// Global Variables
@@ -130,7 +130,7 @@ void setup() {
   sCAN.begin();
   sCAN.setBaudRate(500000);
   tCAN.begin();
-  tCAN.setBaudRate(500000);
+  tCAN.setBaudRate(1000000);
 
   Serial.println("Setting up time");
   setSyncProvider(get_t4_time);
@@ -174,7 +174,7 @@ void setup() {
   }
 
   // Print CSV heading to the logfile
-  logger.println("bus,time,msg.id,msg.len,data");
+  logger.println("time,msg.id,msg.len,data,bus");
   logger.flush();
 
   // Do te ting
@@ -238,7 +238,6 @@ void write_to_SD(CAN_message_t msg, uint8_t bus) {
 
   // Log to SD
   logger.print(String(current_time) + ",");
-  logger.print(String(bus) + ",");
   logger.print(String(msg.id, HEX) + ",");
   logger.print(String(msg.len) + ",");
   for (int i = 0; i < msg.len; i++) {
@@ -247,6 +246,7 @@ void write_to_SD(CAN_message_t msg, uint8_t bus) {
     }
     logger.print(msg.buf[i], HEX);
   }
+  logger.print("," + String(bus));
   logger.println();
   digitalToggle(13); // Flip LED state for signs of life
 
@@ -271,8 +271,8 @@ void nav_can_msg() {
 
       // Yeet data
       for (uint8_t i = 0; i < (sizeof(vnav_msgs) / sizeof(vnav_msgs[0])); i++) {
-        tCAN.write(vnav_msgs[i]);
-        write_to_SD(vnav_msgs[i], 2);
+        tCAN.write(*vnav_msgs[i]);
+        write_to_SD(*vnav_msgs[i], 2);
 #ifdef HAS_TEL
         send_packet(vnav_msgs[i].id, vnav_msgs[i].buf, vnav_msgs[i].len);
 #endif
