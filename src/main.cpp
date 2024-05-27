@@ -28,7 +28,8 @@ uint64_t last_sec_epoch;
 // Timers
 Metro timer_msg_RTC = Metro(1000); // Saving to disk
 Metro timer_flush = Metro(50);     // Sending time CAN msg
-
+Metro can_send_10hz = Metro(100, 1);
+Metro can_send_100hz = Metro(10, 1);
 // SD file bois
 File logger;      // For saving to disk
 String printname; // global thing for the filename
@@ -177,7 +178,16 @@ void loop() {
   // Take NAV data and make CAN packet out of it
   nav_can_msg();
 #endif
-
+  if (can_send_10hz.check()) {
+    tCAN.write(vectornav_time);
+    tCAN.write(vectornav_position);
+  }
+  if (can_send_100hz.check()) {
+    tCAN.write(vectornav_accel);
+    tCAN.write(vectornav_attitude);
+    tCAN.write(vectornav_gyro);
+    tCAN.write(vectornav_position);
+  }
   // Flush data to SD card regardless of buffer size
   if (timer_flush.check()) {
     logger.flush();
