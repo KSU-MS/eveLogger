@@ -50,8 +50,11 @@ void gps_can_msg();              // save global pos as CAN msg
 
 // NAV module
 #ifdef HAS_NAV
-#include "nav.hpp"
+// #include "nav.hpp"
+#include "vectornav.hpp"
 vNav nd(Serial8);
+Metro position_fix_send = 50;
+Metro imu_data_send = 10;
 void nav_can_msg(); // save nav data as CAN msg
 #endif
 
@@ -88,7 +91,7 @@ void setup() {
 
 #ifdef HAS_NAV
   Serial.println("Init NAV");
-  nd.init();
+  nd.init(EV);
   Serial.println("NAV set");
 
   // Setup can messages (defs are in can.hpp)
@@ -270,9 +273,21 @@ void nav_can_msg() {
       memcpy(vectornav_accel.buf, &nd.accel, vectornav_accel.len);
 
       // Yeet data
-      for (uint8_t i = 0; i < (sizeof(vnav_msgs) / sizeof(vnav_msgs[0])); i++) {
-        tCAN.write(*vnav_msgs[i]);
-        write_to_SD(*vnav_msgs[i], 2);
+      if (position_fix_send.check()) {
+        for (uint8_t i = 0; i < 2; i++) {
+          tCAN.write(*vnav_msgs[i]);
+          write_to_SD(*vnav_msgs[i], 2);
+        }
+#ifdef HAS_TEL
+        send_packet(vnav_msgs[i].id, vnav_msgs[i].buf, vnav_msgs[i].len);
+#endif
+      }
+
+      if (imu_data_send.check()) {
+        for (uint8_t i = 3; i < 6; i++) {
+          tCAN.write(*vnav_msgs[i]);
+          write_to_SD(*vnav_msgs[i], 2);
+        }
 #ifdef HAS_TEL
         send_packet(vnav_msgs[i].id, vnav_msgs[i].buf, vnav_msgs[i].len);
 #endif

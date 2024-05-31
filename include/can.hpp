@@ -2,7 +2,6 @@
 #define can
 // Imports
 #include <FlexCAN_T4.h>
-#include <nav.hpp>
 
 // CAN Variables
 FlexCAN_T4<CAN1, RX_SIZE_256, TX_SIZE_16> fCAN;
@@ -22,6 +21,6 @@ CAN_message_t vectornav_time, vectornav_attitude, vectornav_gyro,
     vectornav_position, vectornav_velocity, vectornav_accel;
 
 CAN_message_t *vnav_msgs[] = {&vectornav_time,     &vectornav_attitude,
-                              &vectornav_gyro,     &vectornav_position,
+                              &vectornav_position, &vectornav_gyro,
                               &vectornav_velocity, &vectornav_accel};
 #endif // can
