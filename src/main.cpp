@@ -29,8 +29,8 @@ uint64_t last_sec_epoch;
 // Timers
 Metro timer_msg_RTC = Metro(1000); // Saving to disk
 Metro timer_flush = Metro(50);     // Sending time CAN msg
-Metro can_send_10hz = Metro(100,1);
-Metro can_send_100hz = Metro(10,1);
+Metro can_send_10hz = Metro(100, 1);
+Metro can_send_100hz = Metro(10, 1);
 // SD file bois
 File logger;      // For saving to disk
 String printname; // global thing for the filename
@@ -67,7 +67,8 @@ Metro displayUp = Metro(1000); // Timer for updating display info
 #include "dis.hpp"
 #endif
 
-void setup() {
+void setup()
+{
   delay(1000); // Prevents wacky files when turning the car on and off rapidly
 
   // LED setup
@@ -137,9 +138,12 @@ void setup() {
   setSyncProvider(get_t4_time);
   // COMMENT OUT THIS LINE AND PUSH ONCE RTC HAS BEEN SET!!!!
   // Teensy3Clock.set(1709674746); // set time (epoch) at powerup
-  if (timeStatus() != timeSet) {
+  if (timeStatus() != timeSet)
+  {
     Serial.println("RTC not set up, call Teensy3Clock.set(epoch)");
-  } else {
+  }
+  else
+  {
     Serial.print("System date/time set to: ");
     Serial.println(Teensy3Clock.get());
   }
@@ -148,41 +152,49 @@ void setup() {
   // Set up SD card
   Serial.println("Initializing SD card...");
   SdFile::dateTimeCallback(sd_date_time); // Set date/time callback function
-  if (!SD.begin(BUILTIN_SDCARD)) {        // Begin Arduino SD API (Teensy 3.5)
+  if (!SD.begin(BUILTIN_SDCARD))
+  { // Begin Arduino SD API (Teensy 3.5)
     Serial.println("SD card failed or not present");
   }
 
   // Make name of current time
   const char *filename = date_time(Teensy3Clock.get()).c_str();
 
-  if (!SD.exists(filename)) { // Open file for writing
+  if (!SD.exists(filename))
+  { // Open file for writing
     logger = SD.open(filename, (uint8_t)O_WRITE | (uint8_t)O_CREAT);
-  } else { // Print error if name is taken
+  }
+  else
+  { // Print error if name is taken
     Serial.println("You generated a duplicate file name... Go check RTC.");
   }
   printname = filename;
 
   // Debug prints if it fails
-  if (logger) { // Print on open
+  if (logger)
+  { // Print on open
     Serial.print("Successfully opened SD file: ");
     Serial.println(filename);
     digitalWrite(blueLED, HIGH);
     digitalWrite(redLED, LOW);
-  } else { // Print on fail
+  }
+  else
+  { // Print on fail
     Serial.println("Failed to open SD file");
     digitalWrite(blueLED, LOW);
     digitalWrite(redLED, HIGH);
   }
 
   // Print CSV heading to the logfile
-  logger.println("time,msg.id,msg.len,data,bus");
+  logger.println("time,msg.id,msg.len,data");
   logger.flush();
 
   // Do te ting
   Serial.println("Log start");
 }
 
-void loop() {
+void loop()
+{
   // Process and log incoming CAN messages
   read_can_message();
 
@@ -202,19 +214,25 @@ void loop() {
   }
   if (can_send_100hz.check())
   {
-    tCAN.write(vectornav_accel); 
-    tCAN.write(vectornav_attitude); 
-    tCAN.write(vectornav_gyro); 
-    tCAN.write(vectornav_position); 
+    tCAN.write(vectornav_accel);
+    tCAN.write(vectornav_attitude);
+    tCAN.write(vectornav_gyro);
+    tCAN.write(vectornav_position);
+    for (uint8_t i = 0; i < (sizeof(vnav_msgs) / sizeof(vnav_msgs[0])); i++)
+    {
+      write_to_SD(*vnav_msgs[i], 2);
+    }
   }
   // Flush data to SD card regardless of buffer size
-  if (timer_flush.check()) {
+  if (timer_flush.check())
+  {
     logger.flush();
     digitalToggle(blueLED);
   }
 
   // Print timestamp to serial & CAN
-  if (timer_msg_RTC.check()) {
+  if (timer_msg_RTC.check())
+  {
     Serial.println(Teensy3Clock.get());
     // msg_tx.id=0x3FF;
     // CAN.write(msg_tx);
@@ -223,25 +241,29 @@ void loop() {
 
 // While CAN packets are coming in, save the incoming msg and bus of origin
 // currently very ugly, should look at re-writing this
-void read_can_message() {
-  if (fCAN.read(msg)) {
-    write_to_SD(msg, 0);
-  }
+void read_can_message()
+{
+  // if (fCAN.read(msg)) {
+  //   write_to_SD(msg, 0);
+  // }
 
-  if (sCAN.read(msg)) {
-    write_to_SD(msg, 1);
-  }
+  // if (sCAN.read(msg)) {
+  //   write_to_SD(msg, 1);
+  // }
 
-  if (tCAN.read(msg)) {
+  if (tCAN.read(msg))
+  {
     write_to_SD(msg, 2);
   }
 }
 
 // Build buffer "logger" till the timer ticks or buffer fills
-void write_to_SD(CAN_message_t msg, uint8_t bus) {
+void write_to_SD(CAN_message_t msg, uint8_t bus)
+{
   // Calculate Time
   uint64_t sec_epoch = Teensy3Clock.get();
-  if (sec_epoch != last_sec_epoch) {
+  if (sec_epoch != last_sec_epoch)
+  {
     global_ms_offset = millis() % 1000;
     last_sec_epoch = sec_epoch;
   }
@@ -252,13 +274,15 @@ void write_to_SD(CAN_message_t msg, uint8_t bus) {
   logger.print(String(current_time) + ",");
   logger.print(String(msg.id, HEX) + ",");
   logger.print(String(msg.len) + ",");
-  for (int i = 0; i < msg.len; i++) {
-    if (msg.buf[i] < 16) {
+  for (int i = 0; i < msg.len; i++)
+  {
+    if (msg.buf[i] < 16)
+    {
       logger.print('0');
     }
     logger.print(msg.buf[i], HEX);
   }
-  logger.print("," + String(bus));
+  // logger.print("," + String(bus));
   logger.println();
   digitalToggle(13); // Flip LED state for signs of life
 
@@ -268,10 +292,13 @@ void write_to_SD(CAN_message_t msg, uint8_t bus) {
 }
 
 #ifdef HAS_NAV
-void nav_can_msg() {
+void nav_can_msg()
+{
   // If we have more than 4 new bytes, see if its a new line
-  if (Serial8.available() > 4) {
-    if (nd.check_sync_byte()) {
+  if (Serial8.available() > 4)
+  {
+    if (nd.check_sync_byte())
+    {
       // Get data
       nd.read_data();
       memcpy(vectornav_time.buf, &nd.time, vectornav_time.len);
@@ -282,26 +309,31 @@ void nav_can_msg() {
       memcpy(vectornav_accel.buf, &nd.accel, vectornav_accel.len);
 
       // Yeet data
-      for (uint8_t i = 0; i < (sizeof(vnav_msgs) / sizeof(vnav_msgs[0])); i++) {
-        tCAN.write(*vnav_msgs[i]);
-        write_to_SD(*vnav_msgs[i], 2);
-        // tCAN.write(vnav_msgs[i]); // TODO make sure this is set to the right bus
-#ifdef HAS_TEL
-        send_packet(vnav_msgs[i].id, vnav_msgs[i].buf, vnav_msgs[i].len);
-#endif
-      }
+//       for (uint8_t i = 0; i < (sizeof(vnav_msgs) / sizeof(vnav_msgs[0])); i++)
+//       {
+//         // tCAN.write(*vnav_msgs[i]);
+
+//         // tCAN.write(vnav_msgs[i]); // TODO make sure this is set to the right bus
+// #ifdef HAS_TEL
+//         send_packet(vnav_msgs[i].id, vnav_msgs[i].buf, vnav_msgs[i].len);
+// #endif
+//       }
     }
 
 // Update the display with INS state
 // Look at page 139 of the docs if you want a better idea of wtf this means
 #ifdef HAS_DIS
     // Update display
-    if (displayUp.check()) {
+    if (displayUp.check())
+    {
       display.clearDisplay();
       draw_thing(printname, "top");
-      if (nd.r_ins == 2) {
+      if (nd.r_ins == 2)
+      {
         draw_thing(String("NAV GOOD"), "bot");
-      } else {
+      }
+      else
+      {
         draw_thing(String("NAV N/A"), "bot");
       }
     }
@@ -311,7 +343,8 @@ void nav_can_msg() {
 #endif
 
 // A function called once for fat32 file date stuff
-void sd_date_time(uint16_t *date, uint16_t *time) {
+void sd_date_time(uint16_t *date, uint16_t *time)
+{
   // return date using FAT_DATE macro to format fields
   *date = FAT_DATE(year(), month(), day());
   // return time using FAT_TIME macro to format fields
@@ -319,7 +352,8 @@ void sd_date_time(uint16_t *date, uint16_t *time) {
 }
 
 // This function makes me sad
-String date_time(int time) {
+String date_time(int time)
+{
   String outString = "MDY_" + String(month(time)) + "-" + String(day(time)) +
                      "-" + String(year(time)) + "_HMS_" + String(hour(time)) +
                      "-" + String(minute(time)) + "-" + String(second(time)) +
