@@ -12,7 +12,6 @@
 // #define HAS_DIS // Enable/Disable Display code
 // #define HAS_GPS // Enable/Disable GPS data
 #define HAS_NAV // Enable/Disable Vector Nav Boi
-// #define HAS_TEL // Enable/Disable XBee stuffs
 
 ///
 /// Global Variables
@@ -56,12 +55,6 @@ vNav nd(Serial8);
 Metro position_fix_send = 50;
 Metro imu_data_send = 10;
 void nav_can_msg(); // save nav data as CAN msg
-#endif
-
-// TEL module
-#ifdef HAS_TEL
-Metro displayUp = Metro(1000); // Timer for updating display info
-#include "tel.hpp"
 #endif
 
 // DIS module
@@ -114,26 +107,13 @@ void setup() {
   vectornav_accel.len = sizeof(nd.accel);
 #endif
 
-#ifdef HAS_TEL
-  Serial.println("Init TEL");
-  init_TEL();
-  Serial.println("TEL set");
-#endif
-
 #ifdef HAS_DIS
   Serial.println("Init DIS");
   init_DIS();
   Serial.println("DIS set");
 #endif
 
-  // Start CAN thingies
-  // FLEXCAN0_MCR &= 0xFFFDFFFF; // Enables CAN self-reception. Borked
-  fCAN.begin();
-  fCAN.setBaudRate(500000);
-  sCAN.begin();
-  sCAN.setBaudRate(500000);
-  tCAN.begin();
-  tCAN.setBaudRate(1000000);
+  init_CAN();
 
   Serial.println("Setting up time");
   setSyncProvider(get_t4_time);
@@ -215,15 +195,15 @@ void loop() {
 // While CAN packets are coming in, save the incoming msg and bus of origin
 // currently very ugly, should look at re-writing this
 void read_can_message() {
-  if (fCAN.read(msg)) {
+  if (BMS_CAN.read(msg)) {
     write_to_SD(msg, 0);
   }
 
-  if (sCAN.read(msg)) {
+  if (INV_CAN.read(msg)) {
     write_to_SD(msg, 1);
   }
 
-  if (tCAN.read(msg)) {
+  if (DAQ_CAN.read(msg)) {
     write_to_SD(msg, 2);
   }
 }
@@ -252,10 +232,6 @@ void write_to_SD(CAN_message_t msg, uint8_t bus) {
   logger.print("," + String(bus));
   logger.println();
   digitalToggle(13); // Flip LED state for signs of life
-
-#ifdef HAS_TEL
-  send_packet(msg.id, msg.buf, msg.len);
-#endif
 }
 
 #ifdef HAS_NAV
@@ -265,32 +241,26 @@ void nav_can_msg() {
     if (nd.check_sync_byte()) {
       // Get data
       nd.read_data();
-      memcpy(vectornav_time.buf, &nd.time, vectornav_time.len);
-      memcpy(vectornav_attitude.buf, &nd.attitude, vectornav_attitude.len);
-      memcpy(vectornav_gyro.buf, &nd.ang_rate, vectornav_gyro.len);
-      memcpy(vectornav_position.buf, &nd.lat_lon, vectornav_position.len);
-      memcpy(vectornav_velocity.buf, &nd.velocity, vectornav_velocity.len);
-      memcpy(vectornav_accel.buf, &nd.accel, vectornav_accel.len);
 
       // Yeet data
       if (position_fix_send.check()) {
-        for (uint8_t i = 0; i < 2; i++) {
-          tCAN.write(*vnav_msgs[i]);
-          write_to_SD(*vnav_msgs[i], 2);
-        }
-#ifdef HAS_TEL
-        send_packet(vnav_msgs[i].id, vnav_msgs[i].buf, vnav_msgs[i].len);
-#endif
+        memcpy(vectornav_time.buf, &nd.time, vectornav_time.len);
+        memcpy(vectornav_position.buf, &nd.lat_lon, vectornav_position.len);
+
+        DAQ_CAN.write(vectornav_time);
+        DAQ_CAN.write(vectornav_position);
       }
 
       if (imu_data_send.check()) {
-        for (uint8_t i = 3; i < 6; i++) {
-          tCAN.write(*vnav_msgs[i]);
-          write_to_SD(*vnav_msgs[i], 2);
-        }
-#ifdef HAS_TEL
-        send_packet(vnav_msgs[i].id, vnav_msgs[i].buf, vnav_msgs[i].len);
-#endif
+        memcpy(vectornav_attitude.buf, &nd.attitude, vectornav_attitude.len);
+        memcpy(vectornav_gyro.buf, &nd.ang_rate, vectornav_gyro.len);
+        memcpy(vectornav_velocity.buf, &nd.velocity, vectornav_velocity.len);
+        memcpy(vectornav_accel.buf, &nd.accel, vectornav_accel.len);
+
+        DAQ_CAN.write(vectornav_attitude);
+        DAQ_CAN.write(vectornav_gyro);
+        DAQ_CAN.write(vectornav_velocity);
+        DAQ_CAN.write(vectornav_accel);
       }
     }
 
