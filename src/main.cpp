@@ -249,6 +249,9 @@ void nav_can_msg() {
 
         DAQ_CAN.write(vectornav_time);
         DAQ_CAN.write(vectornav_position);
+
+        write_to_SD(vectornav_time, 2);
+        write_to_SD(vectornav_position, 2);
       }
 
       if (imu_data_send.check()) {
@@ -261,6 +264,11 @@ void nav_can_msg() {
         DAQ_CAN.write(vectornav_gyro);
         DAQ_CAN.write(vectornav_velocity);
         DAQ_CAN.write(vectornav_accel);
+
+        write_to_SD(vectornav_attitude, 2);
+        write_to_SD(vectornav_gyro, 2);
+        write_to_SD(vectornav_velocity, 2);
+        write_to_SD(vectornav_accel, 2);
       }
     }
 
