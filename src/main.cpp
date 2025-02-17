@@ -87,22 +87,22 @@ void setup() {
   Serial.println("NAV set");
 
   // Setup can messages (defs are in can.hpp)
-  vectornav_time.id = nav_time_id;
+  vectornav_time.id = ID_NAV_TIME;
   vectornav_time.len = sizeof(nd.time);
 
-  vectornav_attitude.id = nav_attitude_id;
+  vectornav_attitude.id = ID_NAV_ATTITUDE;
   vectornav_attitude.len = sizeof(nd.attitude);
 
-  vectornav_gyro.id = nav_gyro_id;
+  vectornav_gyro.id = ID_NAV_GYRO;
   vectornav_gyro.len = sizeof(nd.ang_rate);
 
-  vectornav_position.id = nav_position_id;
+  vectornav_position.id = ID_NAV_POSITION;
   vectornav_position.len = sizeof(nd.lat_lon);
 
-  vectornav_velocity.id = nav_velocity_id;
+  vectornav_velocity.id = ID_NAV_VELOCITY;
   vectornav_velocity.len = sizeof(nd.velocity);
 
-  vectornav_accel.id = nav_accel_id;
+  vectornav_accel.id = ID_NAV_ACCEL;
   vectornav_accel.len = sizeof(nd.accel);
 #endif
 
