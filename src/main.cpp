@@ -1,10 +1,10 @@
 // Libs
 #include "can.hpp"
+#include "core_pins.h"
 #include <Arduino.h>
 #include <FlexCAN_T4.h>
 #include <Metro.h>
 #include <SD.h>
-#include <SPI.h>
 #include <TimeLib.h>
 #include <Wire.h>
 
@@ -67,10 +67,10 @@ void setup() {
   // LED setup
   pinMode(blueLED, OUTPUT);
   pinMode(redLED, OUTPUT);
-  pinMode(LED_BUILTIN, OUTPUT);
+  // pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(blueLED, HIGH);
   digitalWrite(redLED, HIGH);
-  digitalWrite(LED_BUILTIN, HIGH);
+  // digitalWrite(LED_BUILTIN, HIGH);
 
   // Wait for Serial to start
   Serial.begin(115200);
@@ -166,6 +166,7 @@ void setup() {
 void loop() {
   // Process and log incoming CAN messages
   read_can_message();
+  // digitalToggle(LED_BUILTIN);
 
 #ifdef HAS_GPS
   // Take GPS data and make CAN packet out of it
@@ -204,6 +205,7 @@ void read_can_message() {
 
   if (DAQ_CAN.read(msg)) {
     write_to_SD(msg, 2);
+    Serial.println("bruh");
   }
 }
 

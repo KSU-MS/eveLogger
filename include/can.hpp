@@ -7,7 +7,7 @@
 // CAN Variables
 FlexCAN_T4<CAN1, RX_SIZE_256, TX_SIZE_16> BMS_CAN;
 FlexCAN_T4<CAN2, RX_SIZE_256, TX_SIZE_16> INV_CAN;
-FlexCAN_T4<CAN3, RX_SIZE_256, TX_SIZE_16> DAQ_CAN;
+FlexCAN_T4<CAN3, RX_SIZE_128, TX_SIZE_128> DAQ_CAN;
 static CAN_message_t msg;
 
 CAN_message_t vectornav_time, vectornav_position, vectornav_attitude,
