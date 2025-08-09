@@ -3,30 +3,32 @@
 #include <FlexCAN_T4.h>
 
 // Global Variables
-FlexCAN_T4<CAN3, RX_SIZE_256, TX_SIZE_16> BMS_CAN;
-FlexCAN_T4<CAN2, RX_SIZE_256, TX_SIZE_16> IMD_CAN;
+FlexCAN_T4<CAN1, RX_SIZE_256, TX_SIZE_16> CAN_1;
+FlexCAN_T4<CAN2, RX_SIZE_256, TX_SIZE_16> CAN_2;
 CAN_message_t msg;
 
 void setup() {
+  Serial.begin(9600);
+
   // Init each controller
-  BMS_CAN.begin();
-  IMD_CAN.begin();
+  CAN_1.begin();
+  CAN_2.begin();
 
   // Set buad rate
-  BMS_CAN.setBaudRate(500000);
-  IMD_CAN.setBaudRate(250000);
+  CAN_1.setBaudRate(250000);
+  CAN_2.setBaudRate(500000);
 
   // Do te ting
   Serial.println("Log start");
 
   pinMode(LED_BUILTIN, OUTPUT);
-  digitalWrite(LED_BUILTIN, HIGH);
+  digitalWrite(LED_BUILTIN, LOW);
 }
 
 void loop() {
-  if (IMD_CAN.read(msg)) {
-    BMS_CAN.write(msg);
-  }
+  digitalWrite(LED_BUILTIN, HIGH);
 
-  digitalToggle(LED_BUILTIN);
+  if (CAN_1.read(msg)) {
+    CAN_2.write(msg);
+  }
 }
