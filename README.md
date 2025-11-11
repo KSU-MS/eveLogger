@@ -8,3 +8,9 @@ Also you can toggle what features you want with the #define statements at the to
 I really want to put some sarcastic remark at the end of this, but I have too much other stuff to do. 
 
 - Chance
+
+
+#general goals:
+-remote bootload 
+-platform agnostic (as much as possible)
+  -teensey 4.0, 4.1, rp2350 
