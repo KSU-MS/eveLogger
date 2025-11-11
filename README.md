@@ -11,6 +11,11 @@ I really want to put some sarcastic remark at the end of this, but I have too mu
 
 
 #general goals:
+
 -remote bootload 
+
 -platform agnostic (as much as possible)
+
   -teensey 4.0, 4.1, rp2350 
+
+-Nick
