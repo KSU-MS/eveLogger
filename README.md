@@ -10,12 +10,12 @@ I really want to put some sarcastic remark at the end of this, but I have too mu
 - Chance
 
 
-#general goals:
+<h4>General Goals For CAN Bootloader thing</h4>
 
--remote bootload 
+* remote bootload 
 
--platform agnostic (as much as possible)
+* platform agnostic (as much as possible)
 
-  -teensey 4.0, 4.1, rp2350 
+  * teensey 4.0, 4.1, rp2350 
 
--Nick
+- Nick
